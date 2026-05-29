@@ -41,6 +41,25 @@ def preview_template(template_id: str):
     return handle_action(action)
 
 
+@blueprint.post("/templates/<template_id>/preview")
+@require_auth
+def preview_custom_template(template_id: str):
+    def action():
+        admin = _current_admin()
+        payload = request.get_json(silent=True) or {}
+        variables = payload.get("variables") if isinstance(payload.get("variables"), dict) else {}
+        asset_base_url = f"{request.host_url.rstrip('/')}/api/admin/email/assets"
+        return email_campaign_service.preview_template(
+            template_id,
+            variables,
+            admin_id=str(admin.get("id") or ""),
+            asset_base_url=asset_base_url,
+            custom_html=payload.get("customHtml") or payload.get("custom_html"),
+        )
+
+    return handle_action(action)
+
+
 @blueprint.get("/assets/<content_id>")
 def get_preview_asset(content_id: str):
     def action():

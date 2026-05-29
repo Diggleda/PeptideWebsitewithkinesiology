@@ -88,7 +88,7 @@ const RECIPIENT_MODE_TO_GROUP: Record<RecipientMode, string> = {
 };
 
 const CAMPAIGN_TABS = [
-  { id: "new", label: "New Campaign", Icon: EnvelopeIcon },
+  { id: "new", label: "Create a Campaign", Icon: EnvelopeIcon },
   { id: "templates", label: "Templates", Icon: StrikethroughIcon },
   { id: "draft", label: "Drafts", Icon: BookmarkIcon },
   { id: "scheduled", label: "Scheduled", Icon: ClockIcon },
@@ -175,54 +175,215 @@ const EMAIL_PREVIEW_CONTAINMENT_HEAD = `
   body {
     display: block !important;
   }
+  html[data-email-center-preview-fit-ready="true"],
+  html[data-email-center-preview-fit-ready="true"] body {
+    height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
   *,
   *::before,
   *::after {
     box-sizing: border-box !important;
   }
-  table,
-  div,
-  td,
-  th,
-  p,
-  a,
-  span,
-  img {
-    max-width: 100% !important;
-  }
-  table[role="presentation"] {
-    max-width: 100% !important;
+  [data-email-center-preview-fit-stage] {
+    align-items: flex-start !important;
+    display: block !important;
+    max-width: 100vw !important;
     min-width: 0 !important;
+    overflow: visible !important;
+    position: relative !important;
+    width: 100vw !important;
   }
-  body > table {
-    width: 100% !important;
-    max-width: 100% !important;
+  [data-email-center-preview-fit-content] {
+    display: block !important;
+    left: 0;
+    max-width: none !important;
     min-width: 0 !important;
-    table-layout: fixed !important;
-  }
-  body > table > tbody > tr > td,
-  body > table > tr > td {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
-    padding-left: min(14px, 3vw) !important;
-    padding-right: min(14px, 3vw) !important;
-  }
-  body > table > tbody > tr > td > table,
-  body > table > tr > td > table {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 0 !important;
+    position: absolute !important;
+    text-align: initial !important;
+    top: 0 !important;
+    transform-box: border-box !important;
+    transform-origin: top left !important;
+    width: max-content !important;
   }
   img,
   video {
+    max-width: 100% !important;
     height: auto !important;
   }
   td,
   th {
     overflow-wrap: anywhere !important;
   }
-</style>`;
+</style>
+<script data-email-center-preview-containment>
+(function () {
+  var stage = null;
+  var content = null;
+  var pending = false;
+  var resizeObserver = null;
+  var mutationObserver = null;
+
+  function isInjectedPreviewNode(node) {
+    return Boolean(
+      node &&
+      node.nodeType === 1 &&
+      (
+        node.matches("[data-email-center-preview-containment],[data-email-center-preview-editor],style[data-email-center-preview-editor-style],.email-center-preview-edit-button") ||
+        node.closest(".email-center-preview-edit-button")
+      )
+    );
+  }
+
+  function wrapPreviewContent() {
+    if (!document.body) return false;
+    stage = document.querySelector("[data-email-center-preview-fit-stage]");
+    content = document.querySelector("[data-email-center-preview-fit-content]");
+    if (stage && content) return true;
+
+    stage = document.createElement("div");
+    stage.setAttribute("data-email-center-preview-fit-stage", "true");
+    content = document.createElement("div");
+    content.setAttribute("data-email-center-preview-fit-content", "true");
+
+    Array.prototype.slice.call(document.body.childNodes).forEach(function (node) {
+      if (!isInjectedPreviewNode(node)) {
+        content.appendChild(node);
+      }
+    });
+
+    stage.appendChild(content);
+    document.body.insertBefore(stage, document.body.firstChild);
+    document.documentElement.setAttribute("data-email-center-preview-fit-ready", "true");
+    return true;
+  }
+
+  function measureContent() {
+    content.style.transform = "none";
+    content.style.left = "0px";
+    content.style.width = "max-content";
+    var width = Math.max(content.scrollWidth, content.offsetWidth, 1);
+    var height = Math.max(content.scrollHeight, content.offsetHeight, 1);
+    Array.prototype.slice.call(content.children).forEach(function (child) {
+      width = Math.max(width, child.scrollWidth || 0, child.offsetWidth || 0);
+      height = Math.max(height, child.scrollHeight || 0, child.offsetHeight || 0);
+    });
+    return { width: width, height: height };
+  }
+
+  function candidateScore(element, availableWidth) {
+    var rect = element.getBoundingClientRect();
+    if (rect.width < 120 || rect.height < 80) return -1;
+    var style = window.getComputedStyle(element);
+    var score = 0;
+    var inlineStyle = String(element.getAttribute("style") || "").toLowerCase();
+    var maxWidth = String(style.maxWidth || "").toLowerCase();
+    if (maxWidth && maxWidth !== "none" && maxWidth !== "100%") score += 120;
+    if (/max-width\s*:\s*(?!100%|none)/.test(inlineStyle)) score += 120;
+    if (element.getAttribute("width") && element.getAttribute("width") !== "100%") score += 50;
+    if (parseFloat(style.borderTopWidth) || parseFloat(style.borderRightWidth) || parseFloat(style.borderBottomWidth) || parseFloat(style.borderLeftWidth)) score += 80;
+    if (style.boxShadow && style.boxShadow !== "none") score += 70;
+    if (parseFloat(style.borderRadius)) score += 30;
+    if (String(style.marginLeft) === "auto" && String(style.marginRight) === "auto") score += 30;
+    if (element.tagName === "TABLE") score += 20;
+    if (rect.width >= availableWidth - 2 && score < 100) score -= 100;
+    return score;
+  }
+
+  function findPrimaryContentElement(availableWidth) {
+    var candidates = Array.prototype.slice.call(content.querySelectorAll("table,div,section,article,main"));
+    var best = null;
+    var bestScore = -1;
+    candidates.forEach(function (element) {
+      var score = candidateScore(element, availableWidth);
+      if (score > bestScore) {
+        bestScore = score;
+        best = element;
+      }
+    });
+    return bestScore > 0 ? best : null;
+  }
+
+  function measureVisibleBounds(availableWidth) {
+    var contentRect = content.getBoundingClientRect();
+    var primary = findPrimaryContentElement(availableWidth);
+    if (primary) {
+      var primaryRect = primary.getBoundingClientRect();
+      return {
+        left: primaryRect.left - contentRect.left,
+        right: primaryRect.right - contentRect.left,
+        top: primaryRect.top - contentRect.top,
+        bottom: primaryRect.bottom - contentRect.top
+      };
+    }
+    var bounds = { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity };
+    Array.prototype.slice.call(content.querySelectorAll("img,p,h1,h2,h3,h4,h5,h6,li,a,td,th,table,div")).forEach(function (element) {
+      var rect = element.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      bounds.left = Math.min(bounds.left, rect.left - contentRect.left);
+      bounds.right = Math.max(bounds.right, rect.right - contentRect.left);
+      bounds.top = Math.min(bounds.top, rect.top - contentRect.top);
+      bounds.bottom = Math.max(bounds.bottom, rect.bottom - contentRect.top);
+    });
+    if (!Number.isFinite(bounds.left) || bounds.right <= bounds.left) {
+      return { left: 0, right: Math.max(content.offsetWidth, 1), top: 0, bottom: Math.max(content.offsetHeight, 1) };
+    }
+    return bounds;
+  }
+
+  function fitPreviewContent() {
+    pending = false;
+    if (!wrapPreviewContent()) return;
+    var availableWidth = Math.max(document.documentElement.clientWidth || window.innerWidth || 0, 1);
+    var measured = measureContent();
+    var bounds = measureVisibleBounds(availableWidth);
+    var visibleWidth = Math.max(bounds.right - bounds.left, 1);
+    var visibleHeight = Math.max(bounds.bottom - bounds.top, measured.height, 1);
+    var scale = Math.min(1, availableWidth / visibleWidth);
+    if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+    var offsetX = ((availableWidth - visibleWidth * scale) / 2) - bounds.left * scale;
+    content.style.transform = "scale(" + scale + ")";
+    content.style.left = offsetX + "px";
+    stage.style.width = availableWidth + "px";
+    stage.style.height = Math.ceil(visibleHeight * scale) + "px";
+  }
+
+  function scheduleFit() {
+    if (pending) return;
+    pending = true;
+    window.requestAnimationFrame(fitPreviewContent);
+  }
+
+  function start() {
+    if (!wrapPreviewContent()) return;
+    scheduleFit();
+    window.addEventListener("resize", scheduleFit);
+    window.addEventListener("load", scheduleFit);
+    document.addEventListener("load", scheduleFit, true);
+    if ("ResizeObserver" in window) {
+      resizeObserver = new ResizeObserver(scheduleFit);
+      resizeObserver.observe(content);
+    }
+    if ("MutationObserver" in window) {
+      mutationObserver = new MutationObserver(scheduleFit);
+      mutationObserver.observe(content, {
+        childList: true,
+        characterData: true,
+        subtree: true
+      });
+    }
+    window.setTimeout(scheduleFit, 60);
+    window.setTimeout(scheduleFit, 250);
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", start, { once: true });
+  } else {
+    start();
+  }
+})();
+</script>`;
 
 const buildEmailPreviewEditorAssets = (variableValues: string[]) => {
   const lockedVariableValues = Array.from(
@@ -359,14 +520,23 @@ const buildEmailPreviewEditorAssets = (variableValues: string[]) => {
 
   function cleanHtml() {
     var clone = document.documentElement.cloneNode(true);
-    clone.querySelectorAll(".email-center-preview-edit-button,[data-email-center-preview-editor],style[data-email-center-preview-editor-style],style[data-email-center-preview-containment],meta[data-email-center-preview-containment]").forEach(function (node) {
+    clone.querySelectorAll(".email-center-preview-edit-button,[data-email-center-preview-editor],style[data-email-center-preview-editor-style],style[data-email-center-preview-containment],meta[data-email-center-preview-containment],script[data-email-center-preview-containment]").forEach(function (node) {
       node.remove();
     });
+    var fitStage = clone.querySelector("[data-email-center-preview-fit-stage]");
+    var fitContent = clone.querySelector("[data-email-center-preview-fit-content]");
+    if (fitStage && fitContent && fitStage.parentNode) {
+      while (fitContent.firstChild) {
+        fitStage.parentNode.insertBefore(fitContent.firstChild, fitStage);
+      }
+      fitStage.remove();
+    }
     clone.querySelectorAll("[data-email-center-edit-target],[data-email-center-editing],[contenteditable]").forEach(function (node) {
       node.removeAttribute("data-email-center-edit-target");
       node.removeAttribute("data-email-center-editing");
       node.removeAttribute("contenteditable");
     });
+    clone.removeAttribute("data-email-center-preview-fit-ready");
     return "<!DOCTYPE html>\\n" + clone.outerHTML;
   }
 
@@ -1039,20 +1209,25 @@ export function EmailCenter() {
     if (!selectedTemplateId) return;
     let active = true;
     const timer = window.setTimeout(() => {
+      const pendingDraftCustomHtml = pendingDraftCustomHtmlRef.current.trim();
+      const activeCustomHtml = pendingDraftCustomHtml || getCustomHtmlOverride();
       setPreviewLoading(true);
       void emailCenterAPI
-        .previewTemplate(selectedTemplateId, previewVariables)
+        .previewTemplate(
+          selectedTemplateId,
+          previewVariables,
+          activeCustomHtml ? { customHtml: activeCustomHtml } : undefined,
+        )
         .then((response: any) => {
           if (!active) return;
-          const pendingDraftCustomHtml = pendingDraftCustomHtmlRef.current.trim();
-          if (pendingDraftCustomHtml) {
+          const normalizedCustomHtml = String(response?.customHtml || activeCustomHtml || "").trim();
+          if (normalizedCustomHtml) {
             pendingDraftCustomHtmlRef.current = "";
-            editedPreviewHtmlRef.current = pendingDraftCustomHtml;
+            editedPreviewHtmlRef.current = normalizedCustomHtml;
             setPreviewEdited(true);
-            setPreviewHtml(pendingDraftCustomHtml);
-            return;
+          } else {
+            resetPreviewEdits();
           }
-          resetPreviewEdits();
           setPreviewHtml(String(response?.html || ""));
         })
         .catch((error) => {
@@ -1068,7 +1243,7 @@ export function EmailCenter() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [previewVariables, resetPreviewEdits, selectedTemplateId]);
+  }, [getCustomHtmlOverride, previewVariables, resetPreviewEdits, selectedTemplateId]);
 
   const selectTemplate = (templateId: string) => {
     const template = templates.find((entry) => entry.id === templateId);
@@ -1604,7 +1779,7 @@ export function EmailCenter() {
               </div>
               <iframe
                 title="Email template HTML preview"
-                sandbox=""
+                sandbox="allow-scripts"
                 srcDoc={templatePreviewSrcDoc}
                 className="email-center-preview-frame email-center-preview-frame--templates rounded-md border border-slate-300 bg-white shadow-inner"
               />

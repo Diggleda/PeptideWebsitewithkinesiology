@@ -2024,7 +2024,20 @@ export const emailCenterAPI = {
       credentials: 'include',
     });
   },
-  previewTemplate: async (templateId: string, variables?: Record<string, string>) => {
+  previewTemplate: async (
+    templateId: string,
+    variables?: Record<string, string>,
+    options?: { customHtml?: string },
+  ) => {
+    const customHtml = typeof options?.customHtml === 'string' ? options.customHtml.trim() : '';
+    if (customHtml) {
+      return fetchWithAuth(`${API_BASE_URL}/admin/email/templates/${encodeURIComponent(templateId)}/preview`, {
+        method: 'POST',
+        headers: { Accept: 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ variables: variables || {}, customHtml }),
+      });
+    }
     const params = new URLSearchParams();
     Object.entries(variables || {}).forEach(([key, value]) => {
       params.set(key, value);

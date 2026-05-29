@@ -832,12 +832,21 @@ def preview_template(
     *,
     admin_id: Optional[str] = None,
     asset_base_url: Optional[str] = None,
+    custom_html: Optional[str] = None,
 ) -> Dict[str, Any]:
-    rendered = render_email_template(template_id, variables)
+    template = get_template(template_id)
+    normalized_variables = normalize_variables(template, variables)
+    normalized_custom_html = _normalize_custom_html(
+        custom_html,
+        template=template,
+        variables=normalized_variables,
+    )
+    rendered = render_campaign_html(template_id, normalized_variables, custom_html=normalized_custom_html)
     preview_html, asset_urls = render_preview_html(rendered["html"], asset_base_url=asset_base_url)
     rendered = {
         **rendered,
         "html": preview_html,
+        "customHtml": normalized_custom_html or None,
         "previewAssetUrls": asset_urls,
     }
     email_campaign_repository.log_event(

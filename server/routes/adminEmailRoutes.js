@@ -275,10 +275,22 @@ const normalizeVariables = (template, suppliedVariables) => {
   return variables;
 };
 
-const renderEmailTemplate = (templateId, suppliedVariables) => {
+const normalizeCustomHtml = (value) => {
+  if (typeof value !== 'string') return '';
+  return value
+    .trim()
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b(?=[^>]*data-email-center-preview-(?:containment|editor-style))[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<meta\b(?=[^>]*data-email-center-preview-containment)[^>]*>/gi, '')
+    .replace(/\sdata-email-center-(?:edit-target|editing)(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '')
+    .replace(/\scontenteditable(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '');
+};
+
+const renderEmailTemplate = (templateId, suppliedVariables, customHtml) => {
   const template = getTemplate(templateId);
   const variables = normalizeVariables(template, suppliedVariables);
-  const source = loadTemplateHtml(template);
+  const normalizedCustomHtml = normalizeCustomHtml(customHtml);
+  const source = normalizedCustomHtml || loadTemplateHtml(template);
   const html = source.replace(/{{\s*([a-zA-Z0-9_]+)\s*}}/g, (_match, variableName) => {
     if (!Object.prototype.hasOwnProperty.call(variables, variableName)) return '';
     return escapeHtml(variables[variableName]);
@@ -286,6 +298,7 @@ const renderEmailTemplate = (templateId, suppliedVariables) => {
   return {
     template,
     html,
+    customHtml: normalizedCustomHtml || null,
     variables,
   };
 };
@@ -343,6 +356,22 @@ router.get('/templates', (_req, res, next) => {
 router.get('/templates/:templateId/preview', (req, res, next) => {
   try {
     const rendered = renderEmailTemplate(req.params.templateId, req.query || {});
+    const preview = renderPreviewHtml(rendered.html, req);
+    res.json({
+      ...rendered,
+      html: preview.html,
+      previewAssetUrls: preview.assetUrls,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/templates/:templateId/preview', (req, res, next) => {
+  try {
+    const payload = req.body && typeof req.body === 'object' ? req.body : {};
+    const variables = payload.variables && typeof payload.variables === 'object' ? payload.variables : {};
+    const rendered = renderEmailTemplate(req.params.templateId, variables, payload.customHtml || payload.custom_html);
     const preview = renderPreviewHtml(rendered.html, req);
     res.json({
       ...rendered,
