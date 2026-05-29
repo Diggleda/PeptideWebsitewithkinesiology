@@ -39,6 +39,7 @@ _PROCESSING_STALE_SECONDS = 15 * 60
 _BOUNCE_DIAGNOSTIC_MAX_LENGTH = 1200
 _BOUNCE_POLL_LOCK = threading.Lock()
 _BOUNCE_LAST_POLL_MONOTONIC = 0.0
+_SENT_PENDING_BOUNCE_CHECK_STATUS = "sent_pending_bounce_check"
 
 _THREAD_STARTED = False
 _THREAD_LOCK = threading.Lock()
@@ -97,6 +98,21 @@ def _new_id(prefix: str) -> str:
 def _notify_email_campaigns_changed(**metadata: Any) -> None:
     clean_metadata = {key: value for key, value in metadata.items() if value is not None}
     resource_version_service.bump_safe(_RESOURCE_NAME, metadata=clean_metadata or None)
+
+
+def _notify_campaign_recipient_status_changed(
+    *,
+    campaign_id: str,
+    recipient_email: str,
+    status: str,
+    event: str = "campaign_recipient_status_changed",
+) -> None:
+    _notify_email_campaigns_changed(
+        event=event,
+        campaignId=campaign_id,
+        recipientEmail=recipient_email,
+        recipientStatus=status,
+    )
 
 
 def _normalize_email(value: Any) -> str:
@@ -938,11 +954,12 @@ def _campaign_status_from_counts(campaign: Dict[str, Any], counts: Dict[str, Any
     unsubscribed = int(counts.get("unsubscribed") or 0)
     pending = int(counts.get("pending") or 0)
     processing = int(counts.get("processing") or 0)
-    known_total = sent + failed + unsubscribed + pending + processing
+    checking = int(counts.get(_SENT_PENDING_BOUNCE_CHECK_STATUS) or 0)
+    known_total = sent + failed + unsubscribed + pending + processing + checking
     total = max(int(campaign.get("recipient_count") or 0), known_total)
     if total <= 0:
         return current_status or "draft"
-    if pending > 0 or processing > 0:
+    if pending > 0 or processing > 0 or checking > 0:
         return "sending"
     if failed > 0 and sent == 0 and unsubscribed == 0:
         return "failed"
@@ -1520,8 +1537,34 @@ def poll_bounce_mailbox(*, force: bool = False) -> Dict[str, Any]:
     }
 
 
+def _summarize_bounce_polls(polls: Iterable[Dict[str, Any]]) -> Dict[str, int]:
+    summary = {
+        "processed": 0,
+        "duplicates": 0,
+        "matched": 0,
+        "scanned": 0,
+        "failed": 0,
+        "skipped": 0,
+    }
+    for poll in polls:
+        if not isinstance(poll, dict):
+            continue
+        for key in summary:
+            summary[key] += int(poll.get(key) or 0)
+    return summary
+
+
 def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float = 0.25) -> Dict[str, Any]:
-    bounce_poll = poll_bounce_mailbox()
+    bounce_polls: List[Dict[str, Any]] = []
+
+    def run_bounce_poll(*, force: bool = False, record_skipped: bool = True) -> Dict[str, Any]:
+        result = poll_bounce_mailbox(force=force)
+        if record_skipped or not result.get("skipped"):
+            bounce_polls.append(result)
+        return result
+
+    bounce_poll = run_bounce_poll()
+    bounce_polling_active = bool((bounce_poll or {}).get("enabled"))
     _requeue_stale_processing_recipients()
     jobs = email_campaign_repository.list_due_pending_recipients(limit=limit)
     processed = 0
@@ -1529,6 +1572,55 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
     failed = 0
     skipped = 0
     campaign_ids: set[str] = set()
+    accepted_deliveries: List[Dict[str, Any]] = []
+
+    def finalize_bounce_checked_recipients(poll_result: Optional[Dict[str, Any]]) -> int:
+        nonlocal sent
+        if not bounce_polling_active or not accepted_deliveries:
+            return 0
+        if not poll_result or not poll_result.get("ok") or poll_result.get("skipped"):
+            return 0
+        finalized = 0
+        for delivery in accepted_deliveries:
+            if delivery.get("finalized"):
+                continue
+            campaign_id = str(delivery.get("campaign_id") or "")
+            recipient_email = str(delivery.get("recipient_email") or "")
+            recipient = email_campaign_repository.get_recipient_by_campaign_and_email(campaign_id, recipient_email)
+            current_status = str((recipient or {}).get("status") or "").strip().lower()
+            if current_status in {"failed", "bounced", "unsubscribed"}:
+                delivery["finalized"] = True
+                continue
+            if current_status == "sent":
+                delivery["finalized"] = True
+                continue
+            if current_status not in {_SENT_PENDING_BOUNCE_CHECK_STATUS, "processing"}:
+                continue
+            updated = email_campaign_repository.update_recipient_status_by_campaign_and_email(
+                campaign_id,
+                recipient_email,
+                "sent",
+                sent_at=delivery.get("accepted_at") or _now_iso(),
+            )
+            if not updated:
+                continue
+            sent += 1
+            finalized += 1
+            delivery["finalized"] = True
+            email_campaign_repository.log_event(
+                event_id=_new_id("evt"),
+                campaign_id=campaign_id,
+                recipient_email=recipient_email,
+                event_type="sent",
+                metadata={"templateId": delivery.get("template_id"), "bouncePollChecked": True},
+            )
+            _notify_campaign_recipient_status_changed(
+                campaign_id=campaign_id,
+                recipient_email=recipient_email,
+                status="sent",
+            )
+        return finalized
+
     for job in jobs:
         processed += 1
         campaign_id = str(job.get("campaign_id") or "")
@@ -1542,9 +1634,15 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
                 "failed",
                 error_message="Invalid recipient email",
             )
+            _notify_campaign_recipient_status_changed(
+                campaign_id=campaign_id,
+                recipient_email=recipient_email or str(job.get("recipient_email") or ""),
+                status="failed",
+            )
             continue
         if job.get("campaign_status") == "scheduled":
             email_campaign_repository.update_campaign_status(campaign_id, "sending")
+            _notify_email_campaigns_changed(event="campaign_started", campaignId=campaign_id)
         if email_campaign_repository.is_unsubscribed(recipient_email):
             skipped += 1
             email_campaign_repository.update_recipient_status(
@@ -1559,6 +1657,13 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
                 event_type="unsubscribed",
                 metadata={"reason": "recipient_unsubscribed"},
             )
+            _notify_campaign_recipient_status_changed(
+                campaign_id=campaign_id,
+                recipient_email=recipient_email,
+                status="unsubscribed",
+            )
+            if bounce_polling_active:
+                run_bounce_poll(record_skipped=False)
             continue
         try:
             campaign_variables = dict(job.get("campaign_variables_json") or {})
@@ -1578,15 +1683,50 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
                     "X-Trufusion-Campaign-Template": str(job.get("template_id") or ""),
                 },
             )
-            sent += 1
-            email_campaign_repository.update_recipient_status(recipient_id, "sent", sent_at=_now_iso())
-            email_campaign_repository.log_event(
-                event_id=_new_id("evt"),
-                campaign_id=campaign_id,
-                recipient_email=recipient_email,
-                event_type="sent",
-                metadata={"templateId": job.get("template_id")},
-            )
+            accepted_at = _now_iso()
+            if bounce_polling_active:
+                email_campaign_repository.update_recipient_status(
+                    recipient_id,
+                    _SENT_PENDING_BOUNCE_CHECK_STATUS,
+                    sent_at=accepted_at,
+                )
+                email_campaign_repository.log_event(
+                    event_id=_new_id("evt"),
+                    campaign_id=campaign_id,
+                    recipient_email=recipient_email,
+                    event_type="send_accepted",
+                    metadata={"templateId": job.get("template_id"), "awaitingBouncePoll": True},
+                )
+                accepted_deliveries.append(
+                    {
+                        "campaign_id": campaign_id,
+                        "recipient_email": recipient_email,
+                        "recipient_id": recipient_id,
+                        "template_id": job.get("template_id"),
+                        "accepted_at": accepted_at,
+                        "finalized": False,
+                    }
+                )
+                _notify_campaign_recipient_status_changed(
+                    campaign_id=campaign_id,
+                    recipient_email=recipient_email,
+                    status=_SENT_PENDING_BOUNCE_CHECK_STATUS,
+                )
+            else:
+                sent += 1
+                email_campaign_repository.update_recipient_status(recipient_id, "sent", sent_at=accepted_at)
+                email_campaign_repository.log_event(
+                    event_id=_new_id("evt"),
+                    campaign_id=campaign_id,
+                    recipient_email=recipient_email,
+                    event_type="sent",
+                    metadata={"templateId": job.get("template_id")},
+                )
+                _notify_campaign_recipient_status_changed(
+                    campaign_id=campaign_id,
+                    recipient_email=recipient_email,
+                    status="sent",
+                )
         except Exception as exc:
             failed += 1
             message = str(exc)[:1000] or exc.__class__.__name__
@@ -1604,14 +1744,40 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
                 event_type="failed",
                 metadata={"error": message},
             )
+            _notify_campaign_recipient_status_changed(
+                campaign_id=campaign_id,
+                recipient_email=recipient_email,
+                status="failed",
+            )
+        if bounce_polling_active:
+            interim_bounce_poll = run_bounce_poll(record_skipped=False)
+            finalize_bounce_checked_recipients(interim_bounce_poll)
         if throttle_seconds > 0:
             time.sleep(max(0.0, min(float(throttle_seconds), 10.0)))
 
+    final_poll_campaign_ids: set[str] = set()
     for campaign_id in campaign_ids:
         campaign = email_campaign_repository.get_campaign(campaign_id) or {"id": campaign_id, "status": "sending"}
         counts = email_campaign_repository.count_recipients_by_status(campaign_id)
-        _reconcile_campaign_status(campaign, counts)
+        pending = int(counts.get("pending") or 0)
+        processing = int(counts.get("processing") or 0)
+        checking = int(counts.get(_SENT_PENDING_BOUNCE_CHECK_STATUS) or 0)
+        if checking > 0 and pending <= 0 and processing <= 0:
+            final_poll_campaign_ids.add(campaign_id)
+        reconciled_status = _reconcile_campaign_status(campaign, counts)
+        if reconciled_status in {"sent", "failed"}:
+            final_poll_campaign_ids.add(campaign_id)
 
+    final_poll_forced = bool(bounce_polling_active and final_poll_campaign_ids)
+    if final_poll_forced:
+        final_bounce_poll = run_bounce_poll(force=True)
+        finalize_bounce_checked_recipients(final_bounce_poll)
+        for campaign_id in campaign_ids:
+            campaign = email_campaign_repository.get_campaign(campaign_id) or {"id": campaign_id, "status": "sending"}
+            counts = email_campaign_repository.count_recipients_by_status(campaign_id)
+            _reconcile_campaign_status(campaign, counts)
+
+    bounce_summary = _summarize_bounce_polls(bounce_polls)
     if processed > 0:
         _notify_email_campaigns_changed(event="campaign_recipients_processed", processed=processed, sent=sent, failed=failed, skipped=skipped)
 
@@ -1621,8 +1787,11 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
         "sent": sent,
         "failed": failed,
         "skipped": skipped,
-        "bouncesProcessed": int((bounce_poll or {}).get("processed") or 0),
-        "bouncePoll": bounce_poll,
+        "bouncesProcessed": bounce_summary["processed"],
+        "bouncePoll": bounce_polls[-1] if bounce_polls else bounce_poll,
+        "bouncePolls": bounce_polls,
+        "bouncePollSummary": bounce_summary,
+        "finalBouncePollForced": final_poll_forced,
     }
 
 

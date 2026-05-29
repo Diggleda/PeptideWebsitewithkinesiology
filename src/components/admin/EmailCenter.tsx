@@ -1132,7 +1132,8 @@ const getCampaignProgress = (campaign: EmailCenterCampaign) => {
   const unsubscribed = Number(counts.unsubscribed || 0);
   const pending = Number(counts.pending || 0);
   const processing = Number(counts.processing || 0);
-  const total = Math.max(Number(campaign.recipientCount || 0), sent + failed + unsubscribed + pending + processing, 0);
+  const checking = Number(counts.sent_pending_bounce_check || 0);
+  const total = Math.max(Number(campaign.recipientCount || 0), sent + failed + unsubscribed + pending + processing + checking, 0);
   const completed = Math.min(total, sent + failed + unsubscribed);
   const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
   const segment = (value: number) => (total > 0 ? `${Math.max(0, Math.min(100, (value / total) * 100))}%` : "0%");
@@ -1142,6 +1143,7 @@ const getCampaignProgress = (campaign: EmailCenterCampaign) => {
     unsubscribed,
     pending,
     processing,
+    checking,
     total,
     completed,
     percent,
@@ -1246,6 +1248,18 @@ export function EmailCenter() {
     },
     [updateEmailCenterTabIndicator],
   );
+
+  const navigateToCampaignTab = useCallback((tab: CampaignTab) => {
+    setActiveTab(tab);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        emailCenterRootRef.current?.scrollIntoView({ block: "start", inline: "nearest" });
+        emailCenterTabsContainerRef.current
+          ?.querySelector<HTMLButtonElement>(`button[data-email-center-tab="${tab}"]`)
+          ?.scrollIntoView({ block: "nearest", inline: "center" });
+      });
+    });
+  }, []);
 
   useEffect(() => {
     const handlePreviewEditorMessage = (event: MessageEvent) => {
@@ -1739,10 +1753,6 @@ export function EmailCenter() {
       }
     }
     if (savingCampaign) return;
-    const scrollSnapshot = {
-      x: window.scrollX,
-      y: window.scrollY,
-    };
     setSavingCampaign(true);
     try {
       const customHtml = getCustomHtmlOverride();
@@ -1764,13 +1774,8 @@ export function EmailCenter() {
         setScheduledAt("");
       }
       const nextTab: CampaignTab = mode === "draft" ? "draft" : mode === "schedule" ? "scheduled" : "sent";
-      setActiveTab(nextTab);
+      navigateToCampaignTab(nextTab);
       await loadCampaigns(nextTab === "logs" ? undefined : nextTab);
-      if (mode !== "draft") {
-        window.requestAnimationFrame(() => {
-          window.scrollTo(scrollSnapshot.x, scrollSnapshot.y);
-        });
-      }
     } catch (error) {
       toast.error(getErrorMessage(error));
     } finally {
@@ -1908,6 +1913,7 @@ export function EmailCenter() {
                             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
                               <span>Sent {progress.sent}</span>
                               {progress.processing > 0 && <span>Processing {progress.processing}</span>}
+                              {progress.checking > 0 && <span>Checking {progress.checking}</span>}
                               <span>Pending {progress.pending}</span>
                               {progress.failed > 0 && <span>Failed {progress.failed}</span>}
                               {progress.unsubscribed > 0 && <span>Unsubscribed {progress.unsubscribed}</span>}
