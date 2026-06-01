@@ -301,6 +301,37 @@ class EmailCampaignServiceTests(unittest.TestCase):
         )
         self.assertEqual(sales_reps["recipients"][0]["email"], "active.rep@example.com")
 
+    def test_custom_recipient_uses_active_doctor_profile_when_email_matches_user(self) -> None:
+        doctor_user = {
+            "email": "doctor-account@example.com",
+            "role": "doctor",
+            "status": "active",
+            "name": "Dr. Custom Recipient",
+            "clinicName": "Matched Clinic",
+        }
+        fake_user_repository = types.ModuleType("python_backend.repositories.user_repository")
+        fake_user_repository.find_by_email = lambda email: doctor_user if email == "doctor-account@example.com" else None
+
+        with patch.dict(sys.modules, {"python_backend.repositories.user_repository": fake_user_repository}):
+            result = email_campaign_service.estimate_recipients(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "recipientSelection": {
+                        "mode": "custom",
+                        "customEmails": "doctor-account@example.com, outside@example.com",
+                    },
+                }
+            )
+
+        self.assertEqual(result["recipientCount"], 2)
+        self.assertEqual(result["recipients"][0]["email"], "doctor-account@example.com")
+        self.assertEqual(result["recipients"][0]["name"], "Dr. Custom Recipient")
+        self.assertEqual(result["recipients"][0]["type"], "physician")
+        self.assertEqual(result["recipients"][0]["clinicName"], "Matched Clinic")
+        self.assertEqual(result["recipients"][0]["variables"]["doctor_name"], "Dr. Custom Recipient")
+        self.assertEqual(result["recipients"][1]["email"], "outside@example.com")
+        self.assertEqual(result["recipients"][1]["type"], "custom")
+
     def test_test_send_token_is_required_for_real_campaign(self) -> None:
         admin = {"id": "admin_1", "role": "admin"}
         base_payload = {
@@ -313,16 +344,26 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 "support_email": "support@trufusionlabs.com",
             },
         }
+        fake_user_repository = types.ModuleType("python_backend.repositories.user_repository")
+        fake_user_repository.find_by_email = lambda _email: None
+        user_repository_patch = patch.dict(sys.modules, {"python_backend.repositories.user_repository": fake_user_repository})
+        user_repository_patch.start()
+        self.addCleanup(user_repository_patch.stop)
 
         with patch.object(email_campaign_service.email_service, "send_campaign_test_email") as send_test, \
             patch.object(email_campaign_service.email_campaign_repository, "log_event"), \
             patch.object(email_campaign_service.email_campaign_repository, "create_campaign", side_effect=lambda campaign, _recipients: campaign), \
             patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={"pending": 1}):
             test_response = email_campaign_service.send_test_email(
-                {**base_payload, "recipientEmail": "admin@example.com"},
+                {
+                    **base_payload,
+                    "recipientEmail": "admin@example.com",
+                    "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
+                },
                 admin=admin,
             )
             self.assertEqual(test_response["recipientCount"], 1)
+            self.assertEqual(test_response["campaignRecipientCount"], 1)
             campaign_response = email_campaign_service.create_campaign(
                 {
                     **base_payload,
@@ -359,6 +400,29 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 admin=admin,
             )
 
+        with self.assertRaises(Exception):
+            email_campaign_service.create_campaign(
+                {
+                    **base_payload,
+                    "recipientSelection": {"mode": "custom", "customEmails": "changed@example.com"},
+                    "confirmationText": "SEND",
+                    "testToken": test_response["testToken"],
+                },
+                admin=admin,
+            )
+
+        with self.assertRaises(Exception):
+            email_campaign_service.create_campaign(
+                {
+                    **base_payload,
+                    "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
+                    "ccRecipients": "cc@example.com",
+                    "confirmationText": "SEND",
+                    "testToken": test_response["testToken"],
+                },
+                admin=admin,
+            )
+
     def test_custom_preview_html_is_cleaned_stored_and_bound_to_test_token(self) -> None:
         admin = {"id": "admin_1", "role": "admin"}
         captured: list[tuple[dict, list]] = []
@@ -386,13 +450,22 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 "</body></html>"
             ),
         }
+        fake_user_repository = types.ModuleType("python_backend.repositories.user_repository")
+        fake_user_repository.find_by_email = lambda _email: None
+        user_repository_patch = patch.dict(sys.modules, {"python_backend.repositories.user_repository": fake_user_repository})
+        user_repository_patch.start()
+        self.addCleanup(user_repository_patch.stop)
 
         with patch.object(email_campaign_service.email_service, "send_campaign_test_email") as send_test, \
             patch.object(email_campaign_service.email_campaign_repository, "log_event"), \
             patch.object(email_campaign_service.email_campaign_repository, "create_campaign", side_effect=create_campaign), \
             patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={"pending": 1}):
             test_response = email_campaign_service.send_test_email(
-                {**base_payload, "recipientEmail": "admin@example.com"},
+                {
+                    **base_payload,
+                    "recipientEmail": "admin@example.com",
+                    "recipientSelection": {"mode": "custom", "customEmails": "doctor@example.com"},
+                },
                 admin=admin,
             )
             campaign_response = email_campaign_service.create_campaign(

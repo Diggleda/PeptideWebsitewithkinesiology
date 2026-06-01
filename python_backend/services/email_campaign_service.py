@@ -5,11 +5,13 @@ import hashlib
 import hmac
 import html
 import imaplib
+import importlib
 import json
 import logging
 import os
 import re
 import secrets
+import sys
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -267,6 +269,27 @@ def _custom_html_digest(custom_html: Optional[str]) -> str:
     return hashlib.sha256(str(custom_html or "").encode("utf-8")).hexdigest()
 
 
+def _recipient_context_digest(
+    *,
+    recipient_selection: Optional[Dict[str, Any]],
+    recipients: Iterable[Dict[str, Any]],
+    cc_recipients: Iterable[str],
+    bcc_recipients: Iterable[str],
+) -> str:
+    selection = recipient_selection if isinstance(recipient_selection, dict) else {}
+    context = {
+        "mode": str(selection.get("mode") or "test").strip(),
+        "recipients": sorted(
+            email
+            for email in (_normalize_email((recipient or {}).get("email")) for recipient in recipients)
+            if email
+        ),
+        "ccRecipients": sorted(_normalize_email(email) for email in cc_recipients if _normalize_email(email)),
+        "bccRecipients": sorted(_normalize_email(email) for email in bcc_recipients if _normalize_email(email)),
+    }
+    return hashlib.sha256(_canonical_json(context).encode("utf-8")).hexdigest()
+
+
 def _sign_payload(payload: Dict[str, Any]) -> str:
     raw = _canonical_json(payload).encode("utf-8")
     body = _base64_url_encode(raw)
@@ -299,6 +322,7 @@ def _build_test_token(
     subject: str,
     variables: Dict[str, Any],
     custom_html: Optional[str] = None,
+    recipient_context_digest: str,
 ) -> Tuple[str, str]:
     expires_at = int(time.time()) + _TOKEN_TTL_SECONDS
     payload = {
@@ -307,6 +331,7 @@ def _build_test_token(
         "subject": subject,
         "variablesDigest": _variables_digest(variables),
         "customHtmlDigest": _custom_html_digest(custom_html),
+        "recipientContextDigest": recipient_context_digest,
         "expiresAt": expires_at,
     }
     expires_iso = datetime.fromtimestamp(expires_at, tz=timezone.utc).isoformat().replace("+00:00", "Z")
@@ -321,6 +346,7 @@ def _verify_test_token(
     subject: str,
     variables: Dict[str, Any],
     custom_html: Optional[str] = None,
+    recipient_context_digest: str,
 ) -> None:
     payload = _verify_signed_payload(token)
     if str(payload.get("adminId") or "") != str(admin_id or ""):
@@ -333,6 +359,8 @@ def _verify_test_token(
         raise service_error("Send a new test email after changing variables", 400)
     if str(payload.get("customHtmlDigest") or _custom_html_digest("")) != _custom_html_digest(custom_html):
         raise service_error("Send a new test email after changing the HTML preview", 400)
+    if str(payload.get("recipientContextDigest") or "") != str(recipient_context_digest or ""):
+        raise service_error("Send a new test email after changing recipients", 400)
 
 
 def _build_preview_asset_token(content_id: str) -> str:
@@ -816,6 +844,22 @@ def _recipient_from_user(user: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _repository_module(module_name: str) -> Any:
+    package_root = (__package__ or "python_backend.services").rsplit(".", 1)[0]
+    full_name = f"{package_root}.repositories.{module_name}"
+    return sys.modules.get(full_name) or importlib.import_module(f"..repositories.{module_name}", package=__package__)
+
+
+def _recipient_from_custom_email(email: str) -> Dict[str, Any]:
+    user_repository = _repository_module("user_repository")
+    user = user_repository.find_by_email(email)
+    if user:
+        user_with_email = {**user, "email": email}
+        if _is_verified_physician(user_with_email):
+            return _recipient_from_user(user_with_email)
+    return {"email": email, "name": "", "type": "custom"}
+
+
 def _recipient_from_sales_rep(rep: Dict[str, Any]) -> Dict[str, Any]:
     return {
         **dict(rep or {}),
@@ -869,22 +913,19 @@ def resolve_recipients(selection: Optional[Dict[str, Any]]) -> List[Dict[str, An
         email = _require_email(selected.get("testEmail") or selected.get("email"), "A test recipient email is required")
         recipients.append({"email": email, "name": "Test Recipient", "type": "test"})
     elif mode == "selected_physician":
-        from ..repositories import user_repository
-
+        user_repository = _repository_module("user_repository")
         email = _require_email(selected.get("selectedPhysicianEmail") or selected.get("email"), "A selected physician email is required")
         user = user_repository.find_by_email(email)
         if not user:
             raise service_error("Selected physician was not found", 404)
         recipients.append(_recipient_from_user({**user, "email": email}))
     elif mode == "all_verified_physicians":
-        from ..repositories import user_repository
-
+        user_repository = _repository_module("user_repository")
         for user in user_repository.get_all():
             if _is_verified_physician(user):
                 recipients.append(_recipient_from_user(user))
     elif mode == "sales_reps":
-        from ..repositories import sales_rep_repository
-
+        sales_rep_repository = _repository_module("sales_rep_repository")
         for rep in sales_rep_repository.get_all():
             if str(rep.get("status") or "active").strip().lower() in ("disabled", "inactive", "deleted"):
                 continue
@@ -895,7 +936,7 @@ def resolve_recipients(selection: Optional[Dict[str, Any]]) -> List[Dict[str, An
             normalized = [_normalize_email(email) for email in emails]
         else:
             normalized = _custom_emails_from_text(selected.get("customEmails") or selected.get("emailList"))
-        recipients.extend({"email": email, "name": "", "type": "custom"} for email in normalized if email)
+        recipients.extend(_recipient_from_custom_email(email) for email in normalized if email)
     else:
         raise service_error("Unsupported recipient selection", 400)
     return _dedupe_recipients(recipients)
@@ -1019,6 +1060,33 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
     variables = normalize_variables(template, payload.get("variables") if isinstance(payload.get("variables"), dict) else {})
     custom_html = _normalize_custom_html(payload.get("customHtml") or payload.get("custom_html"), template=template, variables=variables)
     token_variables = _campaign_variables(template, variables)
+    recipient_selection = payload.get("recipientSelection") or payload.get("recipient_selection")
+    if not isinstance(recipient_selection, dict):
+        recipient_selection = {"mode": "test", "testEmail": recipient_email}
+    selected_recipients = resolve_recipients(recipient_selection)
+    _assert_allowed_recipients(template, selected_recipients, recipient_selection)
+    cc_recipients = _payload_extra_recipients(
+        payload,
+        "ccRecipients",
+        "cc_recipients",
+        "ccEmails",
+        "cc_emails",
+        message="Enter valid CC recipient emails.",
+    )
+    bcc_recipients = _payload_extra_recipients(
+        payload,
+        "bccRecipients",
+        "bcc_recipients",
+        "bccEmails",
+        "bcc_emails",
+        message="Enter valid BCC recipient emails.",
+    )
+    recipient_context = _recipient_context_digest(
+        recipient_selection=recipient_selection,
+        recipients=selected_recipients,
+        cc_recipients=cc_recipients,
+        bcc_recipients=bcc_recipients,
+    )
     variables.update(
         {
             "unsubscribe_url": build_unsubscribe_url(recipient_email),
@@ -1047,6 +1115,7 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         subject=subject,
         variables=token_variables,
         custom_html=custom_html,
+        recipient_context_digest=recipient_context,
     )
     return {
         "ok": True,
@@ -1054,6 +1123,7 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         "expiresAt": expires_at,
         "recipientEmail": recipient_email,
         "recipientCount": 1,
+        "campaignRecipientCount": len(selected_recipients),
     }
 
 
@@ -1190,6 +1260,12 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         if str(payload.get("confirmationText") or "").strip() != "SEND":
             raise service_error("Type SEND to confirm this campaign", 400)
         if requires_test_token:
+            recipient_context = _recipient_context_digest(
+                recipient_selection=recipient_selection if isinstance(recipient_selection, dict) else {},
+                recipients=recipients,
+                cc_recipients=cc_recipients,
+                bcc_recipients=bcc_recipients,
+            )
             _verify_test_token(
                 token=payload.get("testToken") or payload.get("test_token"),
                 admin_id=str(admin.get("id") or ""),
@@ -1197,6 +1273,7 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
                 subject=subject,
                 variables=variables,
                 custom_html=custom_html,
+                recipient_context_digest=recipient_context,
             )
 
     now_iso = _now_iso()

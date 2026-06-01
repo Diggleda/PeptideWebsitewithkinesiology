@@ -1733,6 +1733,7 @@ export function EmailCenter() {
     error: string | null;
   }>({ count: null, recipients: [], loading: false, error: null });
   const emailCenterRootRef = useRef<HTMLElement | null>(null);
+  const scheduledAtInputRef = useRef<HTMLInputElement | null>(null);
   const emailCenterTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const editablePreviewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const editedPreviewHtmlRef = useRef("");
@@ -2306,7 +2307,18 @@ export function EmailCenter() {
   useEffect(() => {
     setTestToken("");
     setTestTokenExpiresAt(null);
-  }, [selectedTemplateId, subject, variables]);
+  }, [
+    bccRecipients,
+    ccRecipients,
+    customEmails,
+    effectiveTestRecipientEmail,
+    previewVariables,
+    recipientMode,
+    selectedPhysicianEmail,
+    selectedTemplateId,
+    subject,
+    variables,
+  ]);
 
   useEffect(() => {
     if (!selectedTemplateId) return;
@@ -2387,6 +2399,9 @@ export function EmailCenter() {
         subject,
         variables: previewVariables,
         customHtml: customHtml || undefined,
+        recipientSelection: buildRecipientSelection(),
+        ccRecipients: ccRecipients.trim() || undefined,
+        bccRecipients: bccRecipients.trim() || undefined,
         recipientEmail: testRecipientEmail,
       })) as any;
       setTestToken(String(response?.testToken || ""));
@@ -2423,12 +2438,16 @@ export function EmailCenter() {
     }
     let scheduleIso: string | null = null;
     if (mode === "schedule") {
-      if (!scheduledAt) {
+      const selectedScheduledAt = (scheduledAtInputRef.current?.value || scheduledAt).trim();
+      if (!selectedScheduledAt) {
         toast.error("Choose a scheduled send time first.");
         return;
       }
+      if (selectedScheduledAt !== scheduledAt) {
+        setScheduledAt(selectedScheduledAt);
+      }
       try {
-        scheduleIso = scheduleInputToIso(scheduledAt);
+        scheduleIso = scheduleInputToIso(selectedScheduledAt);
       } catch (error) {
         toast.error(getErrorMessage(error));
         return;
@@ -2681,8 +2700,10 @@ export function EmailCenter() {
             <label className={FIELD_SHELL_CLASS}>
               <span className={FIELD_LABEL_CLASS}>Scheduled send time</span>
               <input
+                ref={scheduledAtInputRef}
                 type="datetime-local"
                 value={scheduledAt}
+                onInput={(event) => setScheduledAt(event.currentTarget.value)}
                 onChange={(event) => setScheduledAt(event.target.value)}
                 className={INPUT_CLASS}
                 autoFocus
