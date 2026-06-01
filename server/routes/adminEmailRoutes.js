@@ -1,14 +1,20 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Router } = require('express');
 const { authenticate } = require('../middleware/authenticate');
+const env = require('../config/env');
 const userRepository = require('../repositories/userRepository');
 const salesRepRepository = require('../repositories/salesRepRepository');
+const { parseMultipartSingleFile } = require('../utils/multipart');
 
 const router = Router();
 const repoRoot = path.resolve(__dirname, '..', '..');
 const manifestPath = path.join(repoRoot, 'python_backend', 'email_templates_manifest.json');
 const templateRoot = path.join(repoRoot, 'python_backend', 'email_templates');
+const uploadedImageAssetRoot = path.join(env.dataDir, 'uploads', 'email-center-images');
+const uploadedImageAssetPattern = /^email_img_[a-f0-9]{24}\.(?:png|jpe?g|gif|webp)$/i;
+const maxUploadedImageAssetBytes = 8 * 1024 * 1024;
 
 const EMAIL_TYPE_OPTIONS = [
   { id: 'survey', label: 'Survey' },
@@ -299,7 +305,7 @@ const normalizeCustomHtml = (value, template, variables) => {
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style\b(?=[^>]*data-email-center-preview-(?:containment|editor-style))[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<meta\b(?=[^>]*data-email-center-preview-containment)[^>]*>/gi, '')
-    .replace(/\sdata-email-center-(?:edit-target|editing)(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '')
+    .replace(/\sdata-email-center-(?:edit-target|editing|image-uploading)(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '')
     .replace(/\scontenteditable(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '')
     .replace(
       /<span\b(?=[^>]*\bdata-email-center-variable=(["']?)([a-zA-Z0-9_]+)\1)[^>]*>[\s\S]*?<\/span>/gi,
@@ -328,6 +334,65 @@ const renderEmailTemplate = (templateId, suppliedVariables, customHtml) => {
 const getAssetBaseUrl = (req) => {
   const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
   return `${protocol}://${req.get('host')}/api/admin/email/assets`;
+};
+
+const getUploadedAssetBaseUrl = (req) => {
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  return `${protocol}://${req.get('host')}/api/admin/email`;
+};
+
+const detectUploadedImageType = (buffer, suppliedMimeType = '') => {
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { mimeType: 'image/png', extension: '.png' };
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { mimeType: 'image/jpeg', extension: '.jpg' };
+  }
+  const prefix = buffer.subarray(0, 6).toString('ascii');
+  if (prefix === 'GIF87a' || prefix === 'GIF89a') {
+    return { mimeType: 'image/gif', extension: '.gif' };
+  }
+  if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return { mimeType: 'image/webp', extension: '.webp' };
+  }
+  const supplied = String(suppliedMimeType || '').trim().toLowerCase();
+  const error = new Error(
+    ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'].includes(supplied)
+      ? 'Uploaded image data does not match its file type'
+      : 'Upload a PNG, JPEG, GIF, or WebP image',
+  );
+  error.status = 415;
+  throw error;
+};
+
+const saveUploadedImageAsset = async ({ buffer, filename, mimeType, req }) => {
+  if (!buffer || buffer.length === 0) {
+    const error = new Error('Image file is required');
+    error.status = 400;
+    throw error;
+  }
+  if (buffer.length > maxUploadedImageAssetBytes) {
+    const error = new Error(`Image file is too large (max ${Math.round((maxUploadedImageAssetBytes / (1024 * 1024)) * 10) / 10} MB)`);
+    error.status = 413;
+    throw error;
+  }
+  const detected = detectUploadedImageType(buffer, mimeType);
+  await fs.promises.mkdir(uploadedImageAssetRoot, { recursive: true });
+  let assetId = '';
+  let assetPath = '';
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    assetId = `email_img_${crypto.randomBytes(12).toString('hex')}${detected.extension}`;
+    assetPath = path.join(uploadedImageAssetRoot, assetId);
+    if (!fs.existsSync(assetPath)) break;
+  }
+  await fs.promises.writeFile(assetPath, buffer, { flag: 'wx' });
+  return {
+    assetId,
+    url: `${getUploadedAssetBaseUrl(req)}/uploaded-assets/${encodeURIComponent(assetId)}`,
+    mimeType: detected.mimeType,
+    filename: String(filename || '').trim() || assetId,
+    bytes: buffer.length,
+  };
 };
 
 const renderPreviewHtml = (html, req) => {
@@ -362,7 +427,47 @@ router.get('/assets/:contentId', (req, res, next) => {
   }
 });
 
+router.get('/uploaded-assets/:assetId', (req, res, next) => {
+  try {
+    const assetId = String(req.params.assetId || '').trim();
+    if (!uploadedImageAssetPattern.test(assetId)) {
+      return res.status(404).json({ error: 'Email image asset not found' });
+    }
+    const root = path.resolve(uploadedImageAssetRoot);
+    const assetPath = path.resolve(root, assetId);
+    if (!assetPath.startsWith(`${root}${path.sep}`) || !fs.existsSync(assetPath)) {
+      return res.status(404).json({ error: 'Email image asset not found' });
+    }
+    const buffer = fs.readFileSync(assetPath);
+    const detected = detectUploadedImageType(buffer);
+    res.setHeader('Content-Type', detected.mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Content-Disposition', `inline; filename="${assetId}"`);
+    return res.send(buffer);
+  } catch (error) {
+    return next(error);
+  }
+});
+
 router.use(authenticate, requireAdmin);
+
+router.post('/assets/upload', async (req, res, next) => {
+  try {
+    const parsed = await parseMultipartSingleFile(req, {
+      fieldName: 'file',
+      maxBytes: maxUploadedImageAssetBytes + 1024,
+    });
+    const asset = await saveUploadedImageAsset({
+      buffer: parsed.buffer,
+      filename: parsed.filename,
+      mimeType: parsed.mimeType,
+      req,
+    });
+    return res.status(201).json(asset);
+  } catch (error) {
+    return next(error);
+  }
+});
 
 router.get('/templates', (_req, res, next) => {
   try {

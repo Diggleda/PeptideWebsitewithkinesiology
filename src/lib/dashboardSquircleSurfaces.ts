@@ -61,6 +61,13 @@ const DASHBOARD_SQUIRCLE_EXCLUDE_SELECTOR = [
   ".app-header-blur",
   ".modal-squircle",
   ".modal-squircle *",
+  ".admin-dashboard-list",
+  ".sales-rep-table-wrapper",
+  ".referrals-table-scroll",
+  ".referrals-table-container",
+  ".lead-list-scroll",
+  ".account-tab-scroll-container",
+  ".sales-order-card",
   "[data-dashboard-squircle='off']",
 ].join(",");
 

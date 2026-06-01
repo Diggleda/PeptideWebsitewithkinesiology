@@ -4,6 +4,10 @@ import unittest
 import re
 import sys
 import types
+import tempfile
+from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlparse
 from unittest.mock import patch
 
@@ -105,6 +109,43 @@ class AdminEmailRouteTests(unittest.TestCase):
         self.assertEqual(asset_response.status_code, 200)
         self.assertEqual(asset_response.mimetype, "image/png")
         self.assertGreater(len(asset_response.get_data()), 0)
+
+    def test_upload_asset_route_returns_public_image_url(self) -> None:
+        png_data = (
+            b"\x89PNG\r\n\x1a\n"
+            b"\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+            b"\x1f\x15\xc4\x89"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, self.app.test_client() as client, patch.object(
+            auth_middleware,
+            "_authenticate_request",
+            return_value=None,
+        ), patch.object(
+            admin_email,
+            "_current_admin",
+            return_value={"id": "admin_1", "role": "admin"},
+        ), patch.object(
+            admin_email.email_campaign_service,
+            "get_config",
+            return_value=SimpleNamespace(data_dir=Path(tmpdir), frontend_base_url="http://localhost:3000"),
+        ):
+            response = client.post(
+                "/api/admin/email/assets/upload",
+                data={"file": (BytesIO(png_data), "replacement.png")},
+                content_type="multipart/form-data",
+            )
+
+            self.assertEqual(response.status_code, 201)
+            payload = response.get_json()
+            self.assertEqual(payload["mimeType"], "image/png")
+            self.assertIn("/api/admin/email/uploaded-assets/email_img_", payload["url"])
+
+            parsed = urlparse(payload["url"])
+            asset_response = client.get(parsed.path)
+            self.assertEqual(asset_response.status_code, 200)
+            self.assertEqual(asset_response.mimetype, "image/png")
+            self.assertEqual(asset_response.get_data(), png_data)
 
     def test_unsubscribe_route_supports_json_and_redirect(self) -> None:
         with self.app.test_client() as client, patch.object(

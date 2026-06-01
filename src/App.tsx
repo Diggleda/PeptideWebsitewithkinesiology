@@ -36501,12 +36501,19 @@ function MainApp() {
 		                              : (missingCertificates as any)
 		                            ).map((product: any) => {
 		                              const id = String(product.wooProductId);
+		                              const certificateFilename =
+		                                typeof product.filename === "string" &&
+		                                product.filename.trim().length > 0
+		                                  ? product.filename.trim()
+		                                  : null;
 		                              const labelParts = [
 		                                product.name && String(product.name).trim().length > 0
 		                                  ? String(product.name).trim()
 		                                  : `Product ${id}`,
+		                                product.hasCertificate
+		                                  ? certificateFilename || "Certificate file"
+		                                  : "Missing",
 		                                product.sku ? `SKU ${product.sku}` : null,
-		                                product.hasCertificate ? "Has certificate" : "Missing",
 		                              ].filter(
 		                                (part): part is string =>
 		                                  typeof part === "string" &&

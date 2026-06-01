@@ -34,7 +34,16 @@ _TEST_RATE_LIMIT = 10
 _TEST_SENDS: Dict[str, List[float]] = {}
 _TEST_SENDS_LOCK = threading.Lock()
 _CUSTOM_HTML_VARIABLE_KEY = "__email_center_custom_html"
+_CC_RECIPIENTS_VARIABLE_KEY = "__email_center_cc_recipients"
+_BCC_RECIPIENTS_VARIABLE_KEY = "__email_center_bcc_recipients"
+_CAMPAIGN_RESERVED_VARIABLE_KEYS = {
+    _CUSTOM_HTML_VARIABLE_KEY,
+    _CC_RECIPIENTS_VARIABLE_KEY,
+    _BCC_RECIPIENTS_VARIABLE_KEY,
+}
 _MAX_CUSTOM_HTML_LENGTH = 500_000
+_MAX_UPLOADED_IMAGE_ASSET_BYTES = 8 * 1024 * 1024
+_UPLOADED_IMAGE_ASSET_RE = re.compile(r"^email_img_[a-f0-9]{24}\.(?:png|jpe?g|gif|webp)$", re.I)
 _PROCESSING_STALE_SECONDS = 15 * 60
 _BOUNCE_DIAGNOSTIC_MAX_LENGTH = 1200
 _BOUNCE_POLL_LOCK = threading.Lock()
@@ -93,6 +102,79 @@ def _now_iso() -> str:
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(12)}"
+
+
+def _uploaded_image_asset_root() -> Path:
+    config = get_config()
+    return Path(str(getattr(config, "data_dir", "server-data"))) / "uploads" / "email-center-images"
+
+
+def _detect_uploaded_image_type(data: bytes, supplied_mime_type: Any = None) -> Tuple[str, str]:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", ".png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", ".jpg"
+    if data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
+        return "image/gif", ".gif"
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    supplied = str(supplied_mime_type or "").strip().lower()
+    if supplied in {"image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp"}:
+        raise service_error("Uploaded image data does not match its file type", 415)
+    raise service_error("Upload a PNG, JPEG, GIF, or WebP image", 415)
+
+
+def save_uploaded_image_asset(
+    *,
+    data: bytes,
+    filename: Any = None,
+    mime_type: Any = None,
+    asset_base_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    if not data:
+        raise service_error("Image file is required", 400)
+    if len(data) > _MAX_UPLOADED_IMAGE_ASSET_BYTES:
+        max_mb = round(_MAX_UPLOADED_IMAGE_ASSET_BYTES / (1024 * 1024), 1)
+        raise service_error(f"Image file is too large (max {max_mb} MB)", 413)
+    detected_mime, extension = _detect_uploaded_image_type(data, mime_type)
+    root = _uploaded_image_asset_root()
+    root.mkdir(parents=True, exist_ok=True)
+    asset_id = ""
+    asset_path = root
+    for _attempt in range(5):
+        asset_id = f"{_new_id('email_img')}{extension}"
+        asset_path = root / asset_id
+        if not asset_path.exists():
+            break
+    else:  # pragma: no cover - random collision guard
+        raise service_error("Unable to allocate image asset", 500)
+    asset_path.write_bytes(data)
+    base_url = str(asset_base_url or f"{_public_api_base_url()}/admin/email").strip().rstrip("/")
+    original_filename = str(filename or "").strip()
+    return {
+        "assetId": asset_id,
+        "url": f"{base_url}/uploaded-assets/{quote(asset_id, safe='')}",
+        "mimeType": detected_mime,
+        "filename": original_filename or asset_id,
+        "bytes": len(data),
+    }
+
+
+def get_uploaded_image_asset(asset_id: str) -> Dict[str, Any]:
+    normalized = str(asset_id or "").strip()
+    if not _UPLOADED_IMAGE_ASSET_RE.fullmatch(normalized):
+        raise service_error("Email image asset not found", 404)
+    root = _uploaded_image_asset_root().resolve()
+    asset_path = (root / normalized).resolve()
+    if root not in asset_path.parents or not asset_path.is_file():
+        raise service_error("Email image asset not found", 404)
+    data = asset_path.read_bytes()
+    mime_type, _extension = _detect_uploaded_image_type(data)
+    return {
+        "data": data,
+        "mime_type": mime_type,
+        "filename": normalized,
+    }
 
 
 def _notify_email_campaigns_changed(**metadata: Any) -> None:
@@ -412,7 +494,7 @@ def _strip_campaign_reserved_variables(variables: Optional[Dict[str, Any]]) -> D
     return {
         key: value
         for key, value in dict(variables or {}).items()
-        if key != _CUSTOM_HTML_VARIABLE_KEY
+        if key not in _CAMPAIGN_RESERVED_VARIABLE_KEYS
     }
 
 
@@ -489,7 +571,7 @@ def _normalize_custom_html(
         normalized,
     )
     normalized = re.sub(
-        r'\sdata-email-center-(?:edit-target|editing)(?:=(?:"[^"]*"|\'[^\']*\'|[^\s>]+))?',
+        r'\sdata-email-center-(?:edit-target|editing|image-uploading)(?:=(?:"[^"]*"|\'[^\']*\'|[^\s>]+))?',
         "",
         normalized,
     )
@@ -749,6 +831,36 @@ def _custom_emails_from_text(value: Any) -> List[str]:
     return [_normalize_email(piece) for piece in pieces if _normalize_email(piece)]
 
 
+def _normalize_campaign_extra_recipients(
+    value: Any,
+    *,
+    message: str,
+    raise_on_empty_input: bool = True,
+) -> List[str]:
+    if isinstance(value, (list, tuple, set)):
+        pieces = list(value)
+        raw_supplied = any(str(piece or "").strip() for piece in pieces)
+    else:
+        raw_text = str(value or "")
+        pieces = re.split(r"[\s,;]+", raw_text)
+        raw_supplied = bool(raw_text.strip())
+    normalized: List[str] = []
+    for piece in pieces:
+        email = _normalize_email(piece)
+        if email and email not in normalized:
+            normalized.append(email)
+    if raw_supplied and not normalized and raise_on_empty_input:
+        raise service_error(message, 400)
+    return normalized
+
+
+def _payload_extra_recipients(payload: Dict[str, Any], *keys: str, message: str) -> List[str]:
+    for key in keys:
+        if key in payload:
+            return _normalize_campaign_extra_recipients(payload.get(key), message=message)
+    return []
+
+
 def resolve_recipients(selection: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     selected = selection if isinstance(selection, dict) else {}
     mode = str(selected.get("mode") or "test").strip()
@@ -994,12 +1106,24 @@ def _campaign_to_api(campaign: Dict[str, Any]) -> Dict[str, Any]:
     status = _reconcile_campaign_status(campaign, counts)
     variables = dict(campaign.get("variables_json") or {})
     custom_html = str(variables.pop(_CUSTOM_HTML_VARIABLE_KEY, "") or "")
+    cc_recipients = _normalize_campaign_extra_recipients(
+        variables.pop(_CC_RECIPIENTS_VARIABLE_KEY, []),
+        message="Enter valid CC recipient emails.",
+        raise_on_empty_input=False,
+    )
+    bcc_recipients = _normalize_campaign_extra_recipients(
+        variables.pop(_BCC_RECIPIENTS_VARIABLE_KEY, []),
+        message="Enter valid BCC recipient emails.",
+        raise_on_empty_input=False,
+    )
     variables = _strip_campaign_reserved_variables(variables)
     return {
         "id": campaign.get("id"),
         "campaignType": campaign.get("campaign_type"),
         "templateId": campaign.get("template_id"),
         "subject": campaign.get("subject"),
+        "ccRecipients": cc_recipients,
+        "bccRecipients": bcc_recipients,
         "createdByAdminId": campaign.get("created_by_admin_id"),
         "status": status,
         "recipientCount": int(campaign.get("recipient_count") or 0),
@@ -1040,6 +1164,22 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         variables=normalized_variables,
     )
     variables = _campaign_variables(template, normalized_variables)
+    cc_recipients = _payload_extra_recipients(
+        payload,
+        "ccRecipients",
+        "cc_recipients",
+        "ccEmails",
+        "cc_emails",
+        message="Enter valid CC recipient emails.",
+    )
+    bcc_recipients = _payload_extra_recipients(
+        payload,
+        "bccRecipients",
+        "bcc_recipients",
+        "bccEmails",
+        "bcc_emails",
+        message="Enter valid BCC recipient emails.",
+    )
     recipient_selection = payload.get("recipientSelection") or payload.get("recipient_selection")
     recipients = _estimate_draft_recipients(recipient_selection) if save_as_draft else resolve_recipients(recipient_selection)
     selection_for_mode = recipient_selection if isinstance(recipient_selection, dict) else {}
@@ -1073,6 +1213,8 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         "variables_json": {
             **variables,
             **({_CUSTOM_HTML_VARIABLE_KEY: custom_html} if custom_html else {}),
+            **({_CC_RECIPIENTS_VARIABLE_KEY: cc_recipients} if cc_recipients else {}),
+            **({_BCC_RECIPIENTS_VARIABLE_KEY: bcc_recipients} if bcc_recipients else {}),
         },
         "created_at": now_iso,
         "scheduled_at": scheduled_at.isoformat().replace("+00:00", "Z") if scheduled_at else None,
@@ -1721,6 +1863,16 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
         try:
             campaign_variables = dict(job.get("campaign_variables_json") or {})
             custom_html = str(campaign_variables.pop(_CUSTOM_HTML_VARIABLE_KEY, "") or "")
+            cc_recipients = _normalize_campaign_extra_recipients(
+                campaign_variables.pop(_CC_RECIPIENTS_VARIABLE_KEY, []),
+                message="Enter valid CC recipient emails.",
+                raise_on_empty_input=False,
+            )
+            bcc_recipients = _normalize_campaign_extra_recipients(
+                campaign_variables.pop(_BCC_RECIPIENTS_VARIABLE_KEY, []),
+                message="Enter valid BCC recipient emails.",
+                raise_on_empty_input=False,
+            )
             variables = {
                 **campaign_variables,
                 **dict(job.get("recipient_variables_json") or {}),
@@ -1731,6 +1883,8 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
                 str(job.get("subject") or "Message from TrufusionLabs"),
                 rendered["html"],
                 rendered["plainText"],
+                cc=cc_recipients,
+                bcc=bcc_recipients,
                 headers={
                     "X-Trufusion-Campaign-Id": campaign_id,
                     "X-Trufusion-Campaign-Template": str(job.get("template_id") or ""),

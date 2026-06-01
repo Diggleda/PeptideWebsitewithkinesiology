@@ -1701,7 +1701,7 @@ body[data-delegate-theme="true"] .dev-theme-root {
   min-width: 1.15rem;
   min-height: 1.15rem;
   aspect-ratio: 1 / 1;
-  border-radius: calc(var(--squircle-xxs, 5px) * 1.4);
+  border-radius: var(--checkbox-squircle-radius, 4px);
   border: 2px solid var(--checkbox-control-border-color, rgba(148, 163, 184, 0.7));
   background: var(--checkbox-control-background, #fff);
   display: inline-flex;
@@ -4259,8 +4259,11 @@ body {
   /* Shared non-modal container radius. Modal shells use ModalSquircle's SVG radius. */
   --squircle-xxs: 5px;
   --squircle-xs: 10px;
-  --squircle-sm: 12px;
+  --squircle-sm: 10px;
   --squircle-md: 16px;
+  --checkbox-squircle-radius: 7px;
+  --button-squircle-radius: 12px;
+  --small-container-squircle-radius: 14px;
   --container-squircle-radius: 28px;
   --dashboard-squircle-radius: var(--container-squircle-radius);
   --container-radius: var(--container-squircle-radius);
@@ -4289,13 +4292,19 @@ body {
 button:is(.rounded-full, .rounded-md, .rounded-lg, .rounded-xl):not([role="switch"]),
 a.btn-hover-lighter:is(.rounded-full, .rounded-md, .rounded-lg, .rounded-xl),
 [data-slot="button"] {
-  border-radius: var(--squircle-sm, 12px) !important;
+  border-radius: var(--button-squircle-radius, 12px) !important;
   corner-shape: squircle;
 }
 
 button:not([role="switch"]),
 a.btn-hover-lighter,
 [role="button"]:not([role="switch"]) {
+  border-radius: var(--button-squircle-radius, 12px) !important;
+  corner-shape: squircle;
+}
+
+:is(.brand-checkbox, .glass-checkbox, .shop-filter-checkbox, [data-slot="checkbox"], input[type="checkbox"], [role="checkbox"]) {
+  border-radius: var(--checkbox-squircle-radius, 4px) !important;
   corner-shape: squircle;
 }
 
@@ -7317,6 +7326,7 @@ button[data-admin-dashboard-tab="email_center"] svg {
   width: 0.9rem;
   height: 0.9rem;
   accent-color: rgb(11, 6, 121);
+  border-radius: var(--checkbox-squircle-radius, 4px);
 }
 
 .prospect-permit-file-wrap {
@@ -8179,6 +8189,25 @@ button[data-admin-dashboard-tab="email_center"] svg {
   background: rgba(255, 255, 255, 1);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.81);
   padding: 0.75rem;
+}
+
+.sales-rep-dashboard :is(
+  .sales-rep-table-wrapper,
+  .admin-dashboard-list
+),
+.physician-referral-dashboard-panel .referrals-table-scroll {
+  border-color: rgba(11, 6, 121, 0.55) !important;
+  border-style: solid;
+  border-width: 2px;
+  background-clip: padding-box;
+}
+
+.sales-rep-dashboard :is(
+  .sales-rep-table-wrapper,
+  .admin-dashboard-list
+) > .dashboard-squircle-shape,
+.physician-referral-dashboard-panel .referrals-table-scroll > .dashboard-squircle-shape {
+  display: none !important;
 }
 
 .sales-rep-table-wrapper.live-users-list-frame {
@@ -9091,6 +9120,14 @@ body.ultra-wide-screen .ultra-wide-info-shell {
 
 .legal-footer-layout .legal-links {
   grid-area: links;
+}
+
+.legal-footer-contact-button {
+  height: 2.75rem;
+  padding: 0 1.5rem;
+  font-size: 0.90625rem;
+  font-weight: 500;
+  line-height: 1;
 }
 
 @media (min-width: 48rem) {
@@ -10339,7 +10376,7 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
 }
 
 .glass-checkbox {
-  border-radius: var(--squircle-xxs);
+  border-radius: var(--checkbox-squircle-radius, 4px);
   background-image: linear-gradient(150deg, rgba(255, 255, 255, 0.61), rgba(255, 255, 255, 0.11));
   backdrop-filter: blur(18px) saturate(160%);
   -webkit-backdrop-filter: blur(18px) saturate(160%);
@@ -10349,7 +10386,7 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
   content: '';
   position: absolute;
   inset: 1px;
-  border-radius: var(--squircle-xxs);
+  border-radius: var(--checkbox-squircle-radius, 4px);
   background: linear-gradient(160deg, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0.2));
   opacity: 0.9;
   pointer-events: none;
@@ -10360,7 +10397,7 @@ body.manufacturing-standards-modal-open .info-focus-overlay {
   content: '';
   position: absolute;
   inset: 0;
-  border-radius: var(--squircle-xxs);
+  border-radius: var(--checkbox-squircle-radius, 4px);
   background: radial-gradient(circle at 28% 22%, rgba(255, 255, 255, 1), rgba(255, 255, 255, 0) 55%);
   pointer-events: none;
   z-index: 0;
@@ -13458,7 +13495,7 @@ input[type="checkbox"].checkbox-on-dark:not(.brand-checkbox) {
   min-width: 1rem;
   min-height: 1rem;
   border: 2px solid var(--checkbox-control-border-color);
-  border-radius: calc(var(--squircle-xxs, 5px) * 1.1);
+  border-radius: var(--checkbox-squircle-radius, 4px);
   background: var(--checkbox-control-background);
   display: inline-flex;
   align-items: center;
@@ -15589,6 +15626,10 @@ textarea#bug-report.bug-report-textarea:focus-visible {
   border-bottom: 1px solid rgba(12, 27, 110, 0.1);
 }
 
+.marketing-landing__standards {
+  position: relative;
+}
+
 .marketing-landing__capability,
 .marketing-landing__standard {
   border-top: 1px solid rgba(12, 27, 110, 0.1);
@@ -15682,10 +15723,25 @@ textarea#bug-report.bug-report-textarea:focus-visible {
 }
 
 .marketing-landing__standard {
+  position: relative;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
   gap: 2.5rem;
+  width: 100%;
+  border-top: 0;
   padding: 2.5rem 0;
+}
+
+.marketing-landing__standard + .marketing-landing__standard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: rgba(12, 27, 110, 0.1);
+  pointer-events: none;
 }
 
 .marketing-landing__standard-heading {
@@ -15755,30 +15811,35 @@ textarea#bug-report.bug-report-textarea:focus-visible {
   list-style: none;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
+  gap: 1.25rem;
   overflow: hidden;
   border-radius: 1rem;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.marketing-landing__mechanism {
-  min-height: 6.25rem;
-  padding: 1.75rem;
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: baseline;
-  gap: 1.25rem;
   background: #0c1b6e;
 }
 
+.marketing-landing__mechanism {
+  min-height: 4.75rem;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1.25rem;
+  text-align: left;
+  background: #7da7f2;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.07);
+}
+
 .marketing-landing__mechanism > .marketing-landing__number {
+  color: #0c1b6e;
+  font-size: 1.1rem;
   line-height: 1.5;
 }
 
 .marketing-landing__mechanism p {
+  min-width: 0;
   margin: 0;
   color: #ffffff;
-  font-size: 0.96875rem;
+  font-size: 1.125rem;
   line-height: 1.5;
 }
 
@@ -17525,6 +17586,7 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
     .email-center-template-stack,
     .email-center-template-grid,
     .email-center-recipient-stack,
+    .email-center-copy-recipient-grid,
     .email-center-recipient-option-list,
     .email-center-recipient-details,
     .email-center-preview-panel,
@@ -17562,6 +17624,7 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
 .email-center-template-stack,
 .email-center-template-grid,
 .email-center-recipient-stack,
+.email-center-copy-recipient-grid,
 .email-center-recipient-option-list,
 .email-center-recipient-details {
   display: grid;
@@ -17574,12 +17637,9 @@ body[data-delegate-theme="true"] .shop-filter-checkbox[data-state="checked"] [da
   padding-top: 1rem;
 }
 
-.email-center-recipient-option-list input[type="radio"] {
-  accent-color: rgb(11, 6, 121);
-}
-
 @media (min-width: 640px) {
-  .email-center-template-grid {
+  .email-center-template-grid,
+  .email-center-copy-recipient-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -17963,8 +18023,6 @@ button.manual-prospect-action-button[data-slot="button"]:disabled {
   .glass-card,
   .glass-liquid,
   .landing-glass,
-  .marketing-landing__capability,
-  .marketing-landing__standard,
   .marketing-landing__mechanism,
   .catalog-filter-card,
   .catalog-product-card,
@@ -18052,8 +18110,8 @@ button.manual-prospect-action-button[data-slot="button"]:disabled {
   .sales-doctor-row,
   .quote-history-row
 ) {
-  --dashboard-squircle-radius: max(var(--squircle-md, 16px), calc(var(--container-squircle-radius, 28px) * 0.62));
-  border-radius: max(var(--squircle-md, 16px), calc(var(--container-squircle-radius, 28px) * 0.62)) !important;
+  --dashboard-squircle-radius: var(--small-container-squircle-radius, 14px);
+  border-radius: var(--small-container-squircle-radius, 14px) !important;
   corner-shape: squircle;
 }
 

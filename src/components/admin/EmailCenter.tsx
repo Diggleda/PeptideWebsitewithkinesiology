@@ -60,6 +60,15 @@ type PreviewRecipientOption = RecipientPreview & {
   variables: Record<string, string>;
 };
 
+const SHOW_VARIABLES_PREVIEW_RECIPIENT: PreviewRecipientOption = {
+  id: "show_variables",
+  label: "Show Variables",
+  email: "",
+  name: "",
+  type: "show_variables",
+  variables: {},
+};
+
 const SAMPLE_VALUES: Record<string, string> = {
   doctor_name: "Dr. Jane Example",
   clinic_name: "Example Clinic",
@@ -104,6 +113,13 @@ const templateCampaignType = (template?: EmailCenterTemplate | null) =>
 
 const templateDefaultSubject = (template?: EmailCenterTemplate | null) =>
   String((template as any)?.default_subject || "").trim();
+
+const formatRecipientListValue = (value?: unknown) => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry || "").trim()).filter(Boolean).join(", ");
+  }
+  return String(value || "").trim();
+};
 
 const getTemplateVariables = (template?: EmailCenterTemplate | null): string[] =>
   Array.isArray(template?.variables) ? template.variables.filter(Boolean) : [];
@@ -231,10 +247,49 @@ const EMAIL_PREVIEW_CONTAINMENT_HEAD = `
       node.nodeType === 1 &&
       (
         node.matches("[data-email-center-preview-containment],[data-email-center-preview-editor],style[data-email-center-preview-editor-style],.email-center-preview-edit-button") ||
-        node.closest(".email-center-preview-edit-button")
+        node.closest(".email-center-preview-edit-button,.email-center-preview-variable-button,.email-center-preview-variable-menu,[data-email-center-variable-remove]")
       )
     );
   }
+
+  function isPreviewChromeTarget(target) {
+    return Boolean(
+      target &&
+      target.closest &&
+      target.closest(".email-center-preview-edit-button,.email-center-preview-variable-button,.email-center-preview-variable-menu,[data-email-center-variable-remove],[data-email-center-preview-editor]")
+    );
+  }
+
+  function isEditingTarget(target) {
+    return Boolean(
+      target &&
+      target.closest &&
+      target.closest('[contenteditable="true"],[data-email-center-editing="true"]')
+    );
+  }
+
+  function blockPreviewAction(event) {
+    var target = event.target;
+    if (isPreviewChromeTarget(target) || isEditingTarget(target)) return;
+    if (!target || !target.closest) return;
+    var actionTarget = target.closest('a[href],area[href],button,input[type="button"],input[type="submit"],input[type="reset"],[role="button"]');
+    if (!actionTarget) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.stopImmediatePropagation) {
+      event.stopImmediatePropagation();
+    }
+  }
+
+  document.addEventListener("click", blockPreviewAction, true);
+  document.addEventListener("auxclick", blockPreviewAction, true);
+  document.addEventListener("submit", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.stopImmediatePropagation) {
+      event.stopImmediatePropagation();
+    }
+  }, true);
 
   function wrapPreviewContent() {
     if (!document.body) return false;
@@ -395,6 +450,10 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
 
   return `
 <style data-email-center-preview-editor-style>
+  :root {
+    --brand-blue-2: rgb(60, 103, 183);
+    --brand-blue-2-rgb: 60, 103, 183;
+  }
   .email-center-preview-edit-button {
     align-items: center;
     background: #0b0679;
@@ -416,12 +475,90 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     pointer-events: none;
     width: 17px;
   }
+  .email-center-preview-variable-button {
+    align-items: center;
+    background: rgba(148, 163, 184, 0.12);
+    border: 0;
+    border-radius: 5px;
+    color: rgb(100, 116, 139);
+    cursor: pointer;
+    display: none;
+    font: inherit;
+    height: var(--email-center-variable-button-size, 1lh);
+    justify-content: center;
+    line-height: 1;
+    margin: 0 0.18em;
+    min-height: 1em;
+    min-width: 1em;
+    padding: 0;
+    position: static;
+    transition: background 150ms ease, color 150ms ease, opacity 150ms ease;
+    vertical-align: text-bottom;
+    width: var(--email-center-variable-button-size, 1lh);
+    z-index: 2147483646;
+  }
+  .email-center-preview-variable-button:hover,
+  .email-center-preview-variable-button:focus-visible,
+  .email-center-preview-variable-button[data-open="true"] {
+    background: rgba(148, 163, 184, 0.2);
+    color: rgb(71, 85, 105);
+    outline: none;
+  }
+  .email-center-preview-variable-button svg {
+    height: var(--email-center-variable-button-icon-size, 0.66em);
+    pointer-events: none;
+    width: var(--email-center-variable-button-icon-size, 0.66em);
+  }
+  .email-center-preview-variable-menu {
+    background: rgba(248, 250, 252, 0.98);
+    border: 1px solid rgba(148, 163, 184, 0.55);
+    border-radius: 12px;
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.22);
+    color: rgb(30, 41, 59);
+    display: none;
+    max-height: min(18rem, calc(100vh - 2rem));
+    min-width: 14rem;
+    overflow: auto;
+    padding: 0.35rem;
+    position: fixed;
+    z-index: 2147483646;
+  }
+  .email-center-preview-variable-menu[data-open="true"] {
+    display: grid;
+    gap: 0.125rem;
+  }
+  .email-center-preview-variable-menu__item {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: rgb(51, 65, 85);
+    cursor: pointer;
+    display: flex;
+    font: 600 12px/1.2 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    justify-content: flex-start;
+    padding: 0.5rem 0.65rem;
+    text-align: left;
+    white-space: nowrap;
+    width: 100%;
+  }
+  .email-center-preview-variable-menu__item:hover,
+  .email-center-preview-variable-menu__item:focus-visible {
+    background: rgba(var(--brand-blue-2-rgb), 0.12);
+    color: var(--brand-blue-2);
+    outline: none;
+  }
   [data-email-center-edit-target="true"] {
     outline: 2px solid rgba(11, 6, 121, 0.42) !important;
     outline-offset: 3px !important;
   }
   [data-email-center-editing="true"] {
     outline: 2px solid #0b0679 !important;
+    outline-offset: 3px !important;
+  }
+  img[data-email-center-image-uploading="true"] {
+    opacity: 0.62 !important;
+    outline: 2px solid rgba(60, 103, 183, 0.55) !important;
     outline-offset: 3px !important;
   }
   [data-email-center-variable-state="display"] {
@@ -467,29 +604,67 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
 <script data-email-center-preview-editor>
 (function () {
   var MESSAGE_TYPE = "trufusion-email-center-preview-edited";
+  var IMAGE_UPLOAD_REQUEST_TYPE = "trufusion-email-center-preview-image-upload-request";
+  var IMAGE_UPLOAD_RESPONSE_TYPE = "trufusion-email-center-preview-image-upload-response";
   var EDITABLE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,a,span,td,th,img";
   var VARIABLES = ${serializeForInlineScript(lockedVariables)};
   var VARIABLE_PLACEHOLDER_PATTERN = /{{\\s*([a-zA-Z0-9_]+)\\s*}}/g;
   var button = document.createElement("button");
+  var variableButton = document.createElement("button");
+  var variableMenu = document.createElement("div");
+  var imageUploadInput = document.createElement("input");
   var activeTarget = null;
   var editingTarget = null;
   var editingRequiredVariableIds = [];
   var editingLastSafeHtml = "";
   var variableMarkerSequence = 0;
+  var savedSelectionRange = null;
+  var variableMenuOpen = false;
+  var variableUiPointerDown = false;
+  var suppressNextVariableUiClick = false;
+  var imageUploadRequestSequence = 0;
+  var pendingImageUploads = {};
 
   button.type = "button";
   button.className = "email-center-preview-edit-button";
   button.setAttribute("aria-label", "Edit section");
   button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  variableButton.type = "button";
+  variableButton.className = "email-center-preview-variable-button timestamp-chip__add-button";
+  variableButton.setAttribute("aria-label", "Add variable");
+  variableButton.setAttribute("aria-expanded", "false");
+  variableButton.setAttribute("aria-haspopup", "menu");
+  variableButton.setAttribute("contenteditable", "false");
+  variableButton.setAttribute("title", "Add variable");
+  variableButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>';
+  variableMenu.className = "email-center-preview-variable-menu";
+  variableMenu.setAttribute("role", "menu");
+  variableMenu.setAttribute("aria-label", "Variables");
+  variableMenu.setAttribute("contenteditable", "false");
+  imageUploadInput.type = "file";
+  imageUploadInput.accept = "image/png,image/jpeg,image/gif,image/webp";
+  imageUploadInput.style.display = "none";
+  imageUploadInput.setAttribute("aria-hidden", "true");
   document.addEventListener("DOMContentLoaded", function () {
     document.body.appendChild(button);
+    document.body.appendChild(variableButton);
+    document.body.appendChild(variableMenu);
+    document.body.appendChild(imageUploadInput);
   });
 
   function isInjectedNode(element) {
     return Boolean(
       element &&
       element.closest &&
-      element.closest(".email-center-preview-edit-button,script,style,head,meta")
+      element.closest(".email-center-preview-edit-button,.email-center-preview-variable-button,.email-center-preview-variable-menu,script,style,head,meta")
+    );
+  }
+
+  function isVariableUiTarget(element) {
+    return Boolean(
+      element &&
+      element.closest &&
+      element.closest(".email-center-preview-variable-button,.email-center-preview-variable-menu")
     );
   }
 
@@ -595,11 +770,215 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     return marker;
   }
 
+  function hasSelectableVariables() {
+    return VARIABLES.length > 0;
+  }
+
+  function selectionBelongsToEditingTarget(range) {
+    if (!editingTarget || !range) return false;
+    var container = range.commonAncestorContainer;
+    return container === editingTarget || editingTarget.contains(container.nodeType === 1 ? container : container.parentNode);
+  }
+
+  function currentEditingRange() {
+    if (!editingTarget) return null;
+    var selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return savedSelectionRange && selectionBelongsToEditingTarget(savedSelectionRange)
+      ? savedSelectionRange.cloneRange()
+      : null;
+    var range = selection.getRangeAt(0);
+    if (!selectionBelongsToEditingTarget(range)) return savedSelectionRange && selectionBelongsToEditingTarget(savedSelectionRange)
+      ? savedSelectionRange.cloneRange()
+      : null;
+    return range.cloneRange();
+  }
+
+  function saveCurrentEditingSelection() {
+    var range = currentEditingRange();
+    if (!range) return null;
+    savedSelectionRange = range.cloneRange();
+    return savedSelectionRange;
+  }
+
+  function restoreSavedSelection() {
+    if (!editingTarget || !savedSelectionRange || !selectionBelongsToEditingTarget(savedSelectionRange)) return false;
+    var selection = window.getSelection();
+    if (!selection) return false;
+    selection.removeAllRanges();
+    selection.addRange(savedSelectionRange.cloneRange());
+    return true;
+  }
+
+  function caretRectForRange(range) {
+    if (!range) return null;
+    var measuringRange = range.cloneRange();
+    measuringRange.collapse(false);
+    var rects = measuringRange.getClientRects();
+    if (rects && rects.length > 0) {
+      return rects[rects.length - 1];
+    }
+    var marker = document.createElement("span");
+    marker.textContent = "\\u200b";
+    marker.style.display = "inline-block";
+    marker.style.width = "0";
+    marker.style.lineHeight = "1";
+    measuringRange.insertNode(marker);
+    var rect = marker.getBoundingClientRect();
+    if (marker.parentNode) {
+      marker.parentNode.removeChild(marker);
+    }
+    restoreSavedSelection();
+    return rect;
+  }
+
+  function removeVariableButtonFromDocument() {
+    if (variableButton.parentNode) {
+      variableButton.parentNode.removeChild(variableButton);
+    }
+    variableButton.style.display = "none";
+  }
+
+  function elementForRange(range) {
+    if (!range) return editingTarget;
+    var node = range.endContainer || range.startContainer;
+    if (!node) return editingTarget;
+    if (node.nodeType === 1) return node;
+    return node.parentElement || editingTarget;
+  }
+
+  function lineHeightForRange(range) {
+    var element = elementForRange(range);
+    var style = window.getComputedStyle(element || editingTarget);
+    var lineHeight = parseFloat(style.lineHeight);
+    if (!Number.isFinite(lineHeight)) {
+      var fontSize = parseFloat(style.fontSize);
+      lineHeight = Number.isFinite(fontSize) ? fontSize * 1.2 : 16;
+    }
+    return Math.max(10, lineHeight);
+  }
+
+  function sizeVariableButtonForRange(range) {
+    var lineHeight = lineHeightForRange(range);
+    variableButton.style.setProperty("--email-center-variable-button-size", lineHeight + "px");
+    variableButton.style.setProperty("--email-center-variable-button-icon-size", Math.max(8, lineHeight * 0.62) + "px");
+  }
+
+  function closeVariableMenu() {
+    variableMenuOpen = false;
+    variableMenu.removeAttribute("data-open");
+    variableButton.removeAttribute("data-open");
+    variableButton.setAttribute("aria-expanded", "false");
+  }
+
+  function positionVariableMenu() {
+    if (!variableMenuOpen) return;
+    var buttonRect = variableButton.getBoundingClientRect();
+    var menuWidth = Math.max(variableMenu.offsetWidth || 224, 224);
+    var menuHeight = Math.max(variableMenu.offsetHeight || 120, 120);
+    var left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, buttonRect.left));
+    var top = buttonRect.bottom + 8;
+    if (top + menuHeight > window.innerHeight - 8) {
+      top = Math.max(8, buttonRect.top - menuHeight - 8);
+    }
+    variableMenu.style.left = left + "px";
+    variableMenu.style.top = top + "px";
+  }
+
+  function positionVariableButton() {
+    if (!editingTarget || !hasSelectableVariables()) {
+      hideVariableUi();
+      return;
+    }
+    var range = saveCurrentEditingSelection();
+    if (!range) {
+      hideVariableUi();
+      return;
+    }
+    removeVariableButtonFromDocument();
+    sizeVariableButtonForRange(range);
+    var insertionRange = range.cloneRange();
+    insertionRange.collapse(false);
+    insertionRange.insertNode(variableButton);
+    variableButton.style.display = "inline-flex";
+    restoreSavedSelection();
+    positionVariableMenu();
+  }
+
+  function hideVariableUi() {
+    removeVariableButtonFromDocument();
+    closeVariableMenu();
+  }
+
+  function renderVariableMenu() {
+    while (variableMenu.firstChild) {
+      variableMenu.removeChild(variableMenu.firstChild);
+    }
+    VARIABLES.forEach(function (variable) {
+      var option = document.createElement("button");
+      option.type = "button";
+      option.className = "email-center-preview-variable-menu__item";
+      option.setAttribute("role", "menuitem");
+      option.setAttribute("data-email-center-variable-option", variable.key);
+      option.textContent = variableLabel(variable);
+      variableMenu.appendChild(option);
+    });
+  }
+
+  function openVariableMenu() {
+    if (!editingTarget || !hasSelectableVariables()) return;
+    renderVariableMenu();
+    variableMenuOpen = true;
+    variableMenu.setAttribute("data-open", "true");
+    variableButton.setAttribute("data-open", "true");
+    variableButton.setAttribute("aria-expanded", "true");
+    positionVariableMenu();
+  }
+
+  function toggleVariableMenu() {
+    if (variableMenuOpen) {
+      closeVariableMenu();
+    } else {
+      openVariableMenu();
+    }
+  }
+
+  function variableFromOption(option) {
+    var key = option && option.getAttribute("data-email-center-variable-option");
+    return getVariableByKey(key);
+  }
+
+  function insertVariableAtCursor(variable) {
+    if (!editingTarget || !variable) return;
+    restoreSavedSelection();
+    var selection = window.getSelection();
+    var range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    if (!selectionBelongsToEditingTarget(range)) {
+      placeCaretAtEnd(editingTarget);
+      selection = window.getSelection();
+      range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    }
+    if (!range) return;
+    range.deleteContents();
+    var marker = makeVariableMarker(variable);
+    var spacer = document.createTextNode(" ");
+    range.insertNode(spacer);
+    range.insertNode(marker);
+    range.setStartAfter(spacer);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    saveCurrentEditingSelection();
+    markEditingHtmlSafe();
+    postHtmlUpdate();
+    closeVariableMenu();
+    positionVariableButton();
+  }
+
   function shouldSkipTextNode(node) {
     var parent = node && node.parentElement;
     return Boolean(
       !parent ||
-      parent.closest("[data-email-center-variable],script,style,head,meta,.email-center-preview-edit-button")
+      parent.closest("[data-email-center-variable],script,style,head,meta,.email-center-preview-edit-button,.email-center-preview-variable-button,.email-center-preview-variable-menu")
     );
   }
 
@@ -718,7 +1097,7 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
 
   function cleanHtml() {
     var clone = document.documentElement.cloneNode(true);
-    clone.querySelectorAll(".email-center-preview-edit-button,[data-email-center-preview-editor],style[data-email-center-preview-editor-style],style[data-email-center-preview-containment],meta[data-email-center-preview-containment],script[data-email-center-preview-containment]").forEach(function (node) {
+    clone.querySelectorAll(".email-center-preview-edit-button,.email-center-preview-variable-button,.email-center-preview-variable-menu,[data-email-center-preview-editor],style[data-email-center-preview-editor-style],style[data-email-center-preview-containment],meta[data-email-center-preview-containment],script[data-email-center-preview-containment]").forEach(function (node) {
       node.remove();
     });
     var fitStage = clone.querySelector("[data-email-center-preview-fit-stage]");
@@ -730,9 +1109,10 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
       fitStage.remove();
     }
     unwrapVariableMarkers(clone, true);
-    clone.querySelectorAll("[data-email-center-edit-target],[data-email-center-editing],[contenteditable]").forEach(function (node) {
+    clone.querySelectorAll("[data-email-center-edit-target],[data-email-center-editing],[data-email-center-image-uploading],[contenteditable]").forEach(function (node) {
       node.removeAttribute("data-email-center-edit-target");
       node.removeAttribute("data-email-center-editing");
+      node.removeAttribute("data-email-center-image-uploading");
       node.removeAttribute("contenteditable");
     });
     clone.removeAttribute("data-email-center-preview-fit-ready");
@@ -770,6 +1150,37 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     selectTargetContents(target);
   }
 
+  function promptImageAlt(target) {
+    if (!target || attributeHasVariable(target, "alt")) return;
+    var nextAlt = window.prompt("Image alt text", target.getAttribute("alt") || "");
+    if (nextAlt !== null) {
+      target.setAttribute("alt", nextAlt);
+    }
+  }
+
+  function requestImageReplacement(target) {
+    if (!target || target.tagName !== "IMG") return;
+    var requestId = "image_upload_" + String(imageUploadRequestSequence += 1) + "_" + String(Date.now());
+    pendingImageUploads[requestId] = target;
+    imageUploadInput.value = "";
+    imageUploadInput.onchange = function () {
+      var file = imageUploadInput.files && imageUploadInput.files[0];
+      if (!file) {
+        delete pendingImageUploads[requestId];
+        return;
+      }
+      target.setAttribute("data-email-center-image-uploading", "true");
+      window.parent.postMessage({
+        type: IMAGE_UPLOAD_REQUEST_TYPE,
+        requestId: requestId,
+        file: file,
+        filename: file.name || "",
+        mimeType: file.type || ""
+      }, "*");
+    };
+    imageUploadInput.click();
+  }
+
   function stopEditing() {
     if (!editingTarget) return;
     editingTarget.removeAttribute("contenteditable");
@@ -782,24 +1193,14 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     editingTarget = null;
     editingRequiredVariableIds = [];
     editingLastSafeHtml = "";
+    savedSelectionRange = null;
+    hideVariableUi();
   }
 
   function startEditing(target) {
     if (!target) return;
     if (target.tagName === "IMG") {
-      if (!attributeHasVariable(target, "src")) {
-        var nextSrc = window.prompt("Image URL", target.getAttribute("src") || "");
-        if (nextSrc !== null && nextSrc.trim()) {
-          target.setAttribute("src", nextSrc.trim());
-        }
-      }
-      if (!attributeHasVariable(target, "alt")) {
-        var nextAlt = window.prompt("Image alt text", target.getAttribute("alt") || "");
-        if (nextAlt !== null) {
-          target.setAttribute("alt", nextAlt);
-        }
-      }
-      postHtmlUpdate();
+      requestImageReplacement(target);
       return;
     }
     if (target.tagName === "A" && !attributeHasVariable(target, "href")) {
@@ -820,6 +1221,8 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     editingTarget.setAttribute("data-email-center-edit-target", "true");
     editingTarget.focus({ preventScroll: true });
     selectEditableContents(editingTarget);
+    saveCurrentEditingSelection();
+    positionVariableButton();
   }
 
   function getRequiredVariableMarker(id) {
@@ -842,9 +1245,18 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     });
   }
 
+  function editingHtmlWithoutPreviewChrome() {
+    if (!editingTarget) return "";
+    var clone = editingTarget.cloneNode(true);
+    clone.querySelectorAll(".email-center-preview-variable-button,.email-center-preview-variable-menu").forEach(function (node) {
+      node.remove();
+    });
+    return clone.innerHTML;
+  }
+
   function markEditingHtmlSafe() {
     if (!editingTarget) return;
-    editingLastSafeHtml = editingTarget.innerHTML;
+    editingLastSafeHtml = editingHtmlWithoutPreviewChrome();
   }
 
   function removeRequiredVariableId(id) {
@@ -950,6 +1362,30 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     return false;
   }
 
+  window.addEventListener("message", function (event) {
+    var data = event.data || {};
+    if (!data || data.type !== IMAGE_UPLOAD_RESPONSE_TYPE) return;
+    var requestId = String(data.requestId || "");
+    var target = pendingImageUploads[requestId];
+    if (!target) return;
+    delete pendingImageUploads[requestId];
+    target.removeAttribute("data-email-center-image-uploading");
+    if (!data.ok) {
+      window.alert(String(data.error || "Image upload failed."));
+      return;
+    }
+    var url = String(data.url || "").trim();
+    if (!url) {
+      window.alert("Image upload did not return a usable URL.");
+      return;
+    }
+    target.setAttribute("src", url);
+    target.removeAttribute("srcset");
+    target.removeAttribute("data-src");
+    promptImageAlt(target);
+    postHtmlUpdate();
+  });
+
   document.addEventListener("mousemove", function (event) {
     if (editingTarget || event.target === button || button.contains(event.target)) return;
     var target = findEditableTarget(event.target);
@@ -970,6 +1406,37 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     event.preventDefault();
   }, true);
 
+  document.addEventListener("pointerdown", function (event) {
+    if (isVariableUiTarget(event.target)) {
+      variableUiPointerDown = true;
+      suppressNextVariableUiClick = true;
+      window.setTimeout(function () {
+        variableUiPointerDown = false;
+      }, 0);
+      window.setTimeout(function () {
+        suppressNextVariableUiClick = false;
+      }, 400);
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.stopImmediatePropagation) {
+        event.stopImmediatePropagation();
+      }
+      var option = event.target && event.target.closest && event.target.closest("[data-email-center-variable-option]");
+      if (option) {
+        insertVariableAtCursor(variableFromOption(option));
+        return;
+      }
+      if (event.target === variableButton || variableButton.contains(event.target)) {
+        restoreSavedSelection();
+        toggleVariableMenu();
+      }
+      return;
+    }
+    if (variableMenuOpen) {
+      closeVariableMenu();
+    }
+  }, true);
+
   document.addEventListener("click", function (event) {
     var removeButton = event.target && event.target.closest && event.target.closest("[data-email-center-variable-remove]");
     if (!removeButton) return;
@@ -977,6 +1444,33 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     event.stopPropagation();
     removeVariableMarker(removeButton.closest("[data-email-center-variable]"));
   }, true);
+
+  document.addEventListener("click", function (event) {
+    if (!isVariableUiTarget(event.target)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.stopImmediatePropagation) {
+      event.stopImmediatePropagation();
+    }
+    if (suppressNextVariableUiClick) {
+      suppressNextVariableUiClick = false;
+      return;
+    }
+    var option = event.target && event.target.closest && event.target.closest("[data-email-center-variable-option]");
+    if (option) {
+      insertVariableAtCursor(variableFromOption(option));
+      return;
+    }
+    if (event.target === variableButton || variableButton.contains(event.target)) {
+      restoreSavedSelection();
+      toggleVariableMenu();
+    }
+  }, true);
+
+  document.addEventListener("selectionchange", function () {
+    if (!editingTarget) return;
+    window.requestAnimationFrame(positionVariableButton);
+  });
 
   document.addEventListener("beforeinput", function (event) {
     if (!editingTarget) return;
@@ -993,6 +1487,8 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     }
     markEditingHtmlSafe();
     postHtmlUpdate();
+    saveCurrentEditingSelection();
+    positionVariableButton();
   }, true);
 
   document.addEventListener("keydown", function (event) {
@@ -1007,6 +1503,10 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      if (variableMenuOpen) {
+        closeVariableMenu();
+        return;
+      }
       stopEditing();
       clearActiveTarget();
     }
@@ -1014,13 +1514,30 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
       event.preventDefault();
       stopEditing();
     }
+    window.setTimeout(positionVariableButton, 0);
   });
 
   document.addEventListener("focusout", function (event) {
-    if (editingTarget && !editingTarget.contains(event.relatedTarget)) {
+    if (variableUiPointerDown) return;
+    if (editingTarget && !editingTarget.contains(event.relatedTarget) && !isVariableUiTarget(event.relatedTarget)) {
       window.setTimeout(stopEditing, 0);
     }
   }, true);
+
+  document.addEventListener("mouseup", function () {
+    if (!editingTarget) return;
+    saveCurrentEditingSelection();
+    positionVariableButton();
+  }, true);
+
+  document.addEventListener("keyup", function () {
+    if (!editingTarget) return;
+    saveCurrentEditingSelection();
+    positionVariableButton();
+  }, true);
+
+  window.addEventListener("scroll", positionVariableButton, true);
+  window.addEventListener("resize", positionVariableButton);
 
   button.addEventListener("click", function (event) {
     event.preventDefault();
@@ -1161,6 +1678,21 @@ const campaignMatchesView = (campaign: EmailCenterCampaign, status?: string) => 
   return campaign.status === status;
 };
 
+type ScrollElementSnapshot = {
+  element: Element;
+  scrollLeft: number;
+  scrollTop: number;
+};
+
+type PreviewScrollSnapshot = {
+  id: number;
+  frameX: number;
+  frameY: number;
+  windowX: number;
+  windowY: number;
+  elements: ScrollElementSnapshot[];
+};
+
 export function EmailCenter() {
   const [activeTab, setActiveTab] = useState<CampaignTab>("new");
   const [emailTypes, setEmailTypes] = useState<EmailTypeOption[]>([]);
@@ -1174,10 +1706,12 @@ export function EmailCenter() {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templateError, setTemplateError] = useState<string | null>(null);
   const [recipientMode, setRecipientMode] = useState<RecipientMode>("test");
-  const [previewRecipientKey, setPreviewRecipientKey] = useState("test:sample");
+  const [previewRecipientKey, setPreviewRecipientKey] = useState(SHOW_VARIABLES_PREVIEW_RECIPIENT.id);
   const [testEmail, setTestEmail] = useState("");
   const [selectedPhysicianEmail, setSelectedPhysicianEmail] = useState("");
   const [customEmails, setCustomEmails] = useState("");
+  const [ccRecipients, setCcRecipients] = useState("");
+  const [bccRecipients, setBccRecipients] = useState("");
   const [testRecipientEmail, setTestRecipientEmail] = useState("");
   const [testToken, setTestToken] = useState("");
   const [testTokenExpiresAt, setTestTokenExpiresAt] = useState<string | null>(null);
@@ -1204,6 +1738,8 @@ export function EmailCenter() {
   const editedPreviewHtmlRef = useRef("");
   const pendingDraftCustomHtmlRef = useRef("");
   const pendingEmailCampaignRefreshRef = useRef(false);
+  const pendingPreviewScrollRestoreRef = useRef<PreviewScrollSnapshot | null>(null);
+  const previewScrollRestoreSequenceRef = useRef(0);
   const hasCampaignRowsRef = useRef(false);
   const [previewEdited, setPreviewEdited] = useState(false);
   const [emailCenterTabIndicator, setEmailCenterTabIndicator] = useState<{
@@ -1221,6 +1757,99 @@ export function EmailCenter() {
     () => (previewEdited ? editedPreviewHtmlRef.current.trim() : ""),
     [previewEdited],
   );
+
+  const capturePreviewScrollSnapshot = useCallback((): PreviewScrollSnapshot => {
+    const scrollElements = new Map<Element, ScrollElementSnapshot>();
+    const addScrollElement = (element: Element | null | undefined) => {
+      if (!element || scrollElements.has(element)) return;
+      scrollElements.set(element, {
+        element,
+        scrollLeft: element.scrollLeft,
+        scrollTop: element.scrollTop,
+      });
+    };
+
+    addScrollElement(document.scrollingElement);
+    let parent = emailCenterRootRef.current?.parentElement || null;
+    while (parent) {
+      if (parent.scrollHeight > parent.clientHeight || parent.scrollWidth > parent.clientWidth) {
+        addScrollElement(parent);
+      }
+      parent = parent.parentElement;
+    }
+
+    let frameX = 0;
+    let frameY = 0;
+    try {
+      const frameWindow = editablePreviewFrameRef.current?.contentWindow;
+      const frameDocument = frameWindow?.document;
+      frameX = frameWindow?.scrollX ?? frameDocument?.documentElement?.scrollLeft ?? 0;
+      frameY = frameWindow?.scrollY ?? frameDocument?.documentElement?.scrollTop ?? 0;
+    } catch (_error) {
+      frameX = 0;
+      frameY = 0;
+    }
+
+    return {
+      id: previewScrollRestoreSequenceRef.current + 1,
+      frameX,
+      frameY,
+      windowX: window.scrollX,
+      windowY: window.scrollY,
+      elements: Array.from(scrollElements.values()),
+    };
+  }, []);
+
+  const restorePreviewScrollSnapshot = useCallback((snapshot: PreviewScrollSnapshot) => {
+    if (pendingPreviewScrollRestoreRef.current?.id !== snapshot.id) return;
+    snapshot.elements.forEach(({ element, scrollLeft, scrollTop }) => {
+      element.scrollLeft = scrollLeft;
+      element.scrollTop = scrollTop;
+    });
+    window.scrollTo(snapshot.windowX, snapshot.windowY);
+    try {
+      const frameWindow = editablePreviewFrameRef.current?.contentWindow;
+      frameWindow?.scrollTo(snapshot.frameX, snapshot.frameY);
+    } catch (_error) {
+      // Ignore iframe restore failures; the outer page scroll still needs to remain stable.
+    }
+  }, []);
+
+  const schedulePreviewScrollRestore = useCallback(
+    (snapshot: PreviewScrollSnapshot) => {
+      restorePreviewScrollSnapshot(snapshot);
+      window.requestAnimationFrame(() => {
+        restorePreviewScrollSnapshot(snapshot);
+        window.requestAnimationFrame(() => restorePreviewScrollSnapshot(snapshot));
+      });
+      window.setTimeout(() => restorePreviewScrollSnapshot(snapshot), 80);
+      window.setTimeout(() => {
+        restorePreviewScrollSnapshot(snapshot);
+        if (pendingPreviewScrollRestoreRef.current?.id === snapshot.id) {
+          pendingPreviewScrollRestoreRef.current = null;
+        }
+      }, 300);
+    },
+    [restorePreviewScrollSnapshot],
+  );
+
+  const handlePreviewRecipientChange = useCallback(
+    (nextPreviewRecipientKey: string) => {
+      const snapshot = capturePreviewScrollSnapshot();
+      previewScrollRestoreSequenceRef.current = snapshot.id;
+      pendingPreviewScrollRestoreRef.current = snapshot;
+      setPreviewRecipientKey(nextPreviewRecipientKey);
+      schedulePreviewScrollRestore(snapshot);
+    },
+    [capturePreviewScrollSnapshot, schedulePreviewScrollRestore],
+  );
+
+  const handleEditablePreviewFrameLoad = useCallback(() => {
+    const snapshot = pendingPreviewScrollRestoreRef.current;
+    if (snapshot) {
+      schedulePreviewScrollRestore(snapshot);
+    }
+  }, [schedulePreviewScrollRestore]);
 
   const updateEmailCenterTabIndicator = useCallback(() => {
     const container = emailCenterTabsContainerRef.current;
@@ -1264,12 +1893,52 @@ export function EmailCenter() {
   useEffect(() => {
     const handlePreviewEditorMessage = (event: MessageEvent) => {
       if (event.source !== editablePreviewFrameRef.current?.contentWindow) return;
-      const data = event.data as { type?: string; html?: unknown } | null;
-      if (!data || data.type !== "trufusion-email-center-preview-edited") return;
-      editedPreviewHtmlRef.current = String(data.html || "");
-      setPreviewEdited(true);
-      setTestToken("");
-      setTestTokenExpiresAt(null);
+      const data = event.data as {
+        type?: string;
+        html?: unknown;
+        requestId?: unknown;
+        file?: unknown;
+      } | null;
+      if (!data) return;
+      if (data.type === "trufusion-email-center-preview-edited") {
+        editedPreviewHtmlRef.current = String(data.html || "");
+        setPreviewEdited(true);
+        setTestToken("");
+        setTestTokenExpiresAt(null);
+        return;
+      }
+      if (data.type !== "trufusion-email-center-preview-image-upload-request") return;
+      const requestId = String(data.requestId || "");
+      const sourceWindow = event.source as Window | null;
+      const respond = (payload: Record<string, unknown>) => {
+        sourceWindow?.postMessage(
+          {
+            type: "trufusion-email-center-preview-image-upload-response",
+            requestId,
+            ...payload,
+          },
+          "*",
+        );
+      };
+      if (!requestId) return;
+      if (typeof File === "undefined" || !(data.file instanceof File)) {
+        respond({ ok: false, error: "Select a valid image file." });
+        return;
+      }
+      void emailCenterAPI
+        .uploadImageAsset(data.file)
+        .then((response: any) => {
+          const url = String(response?.url || "").trim();
+          if (!url) {
+            throw new Error("Image upload did not return a URL.");
+          }
+          respond({ ok: true, url });
+        })
+        .catch((error) => {
+          const message = getErrorMessage(error);
+          respond({ ok: false, error: message });
+          toast.error(message);
+        });
     };
     window.addEventListener("message", handlePreviewEditorMessage);
     return () => window.removeEventListener("message", handlePreviewEditorMessage);
@@ -1289,6 +1958,11 @@ export function EmailCenter() {
     if (allowedGroups.size === 0) return RECIPIENT_OPTIONS;
     return RECIPIENT_OPTIONS.filter((option) => allowedGroups.has(RECIPIENT_MODE_TO_GROUP[option.id]));
   }, [selectedTemplate]);
+
+  const selectedRecipientOption = useMemo(
+    () => allowedRecipientOptions.find((option) => option.id === recipientMode) || allowedRecipientOptions[0] || null,
+    [allowedRecipientOptions, recipientMode],
+  );
 
   const templatesForType = useMemo(
     () => templates.filter((template) => templateCampaignType(template) === selectedType),
@@ -1325,7 +1999,10 @@ export function EmailCenter() {
       recipients = [{ email: "", name: SAMPLE_VALUES.doctor_name, type: "sample" }];
     }
 
-    return recipients.map((recipient, index) => toPreviewRecipientOption(recipient, recipientMode, index));
+    return [
+      SHOW_VARIABLES_PREVIEW_RECIPIENT,
+      ...recipients.map((recipient, index) => toPreviewRecipientOption(recipient, recipientMode, index)),
+    ];
   }, [
     bulkRecipientEstimate.recipients,
     customEmails,
@@ -1339,7 +2016,7 @@ export function EmailCenter() {
     if (previewRecipientOptions.some((option) => option.id === previewRecipientKey)) {
       return;
     }
-    setPreviewRecipientKey(previewRecipientOptions[0]?.id || "test:sample");
+    setPreviewRecipientKey(previewRecipientOptions[0]?.id || SHOW_VARIABLES_PREVIEW_RECIPIENT.id);
   }, [previewRecipientKey, previewRecipientOptions]);
 
   const selectedPreviewRecipient = useMemo(
@@ -1348,6 +2025,11 @@ export function EmailCenter() {
   );
 
   const previewVariables = useMemo(() => {
+    if (selectedPreviewRecipient?.type === SHOW_VARIABLES_PREVIEW_RECIPIENT.type) {
+      return Object.fromEntries(
+        getTemplateVariables(selectedTemplate).map((variable) => [variable, `{{ ${variable} }}`]),
+      );
+    }
     const nextVariables = { ...variables };
     const templateVariables = new Set(getTemplateVariables(selectedTemplate));
     const selectedVariables = selectedPreviewRecipient?.variables || {};
@@ -1584,6 +2266,8 @@ export function EmailCenter() {
     setTestTokenExpiresAt(null);
     setConfirmationText("");
     setScheduledAt("");
+    setCcRecipients("");
+    setBccRecipients("");
   }, [resetPreviewEdits, selectedTemplate]);
 
   useEffect(() => {
@@ -1603,6 +2287,8 @@ export function EmailCenter() {
         : {},
     );
     setScheduledAt(isoToScheduleInput(pendingPreparedDraft.scheduledAt));
+    setCcRecipients(formatRecipientListValue(pendingPreparedDraft.ccRecipients));
+    setBccRecipients(formatRecipientListValue(pendingPreparedDraft.bccRecipients));
     setTestToken("");
     setTestTokenExpiresAt(null);
     setConfirmationText("");
@@ -1762,6 +2448,8 @@ export function EmailCenter() {
         variables: previewVariables,
         customHtml: customHtml || undefined,
         recipientSelection: buildRecipientSelection(),
+        ccRecipients: ccRecipients.trim() || undefined,
+        bccRecipients: bccRecipients.trim() || undefined,
         status: mode === "draft" ? "draft" : undefined,
         scheduledAt: scheduleIso,
         confirmationText,
@@ -2241,6 +2929,15 @@ export function EmailCenter() {
                       </select>
                     </label>
                   </div>
+                </div>
+              </section>
+
+              <section className={DASHBOARD_PANEL_CLASS}>
+                <div className="mb-4 flex items-center gap-2">
+                  <Users className="h-5 w-5 text-slate-950" aria-hidden="true" />
+                  <h4 className="text-base font-semibold text-slate-950">Subject and Recipients</h4>
+                </div>
+                <div className="email-center-recipient-stack">
                   <label className={FIELD_SHELL_CLASS}>
                     <span className={FIELD_LABEL_CLASS}>Subject</span>
                     <input
@@ -2249,41 +2946,23 @@ export function EmailCenter() {
                       className={INPUT_CLASS}
                     />
                   </label>
-                </div>
-              </section>
-
-              <section className={DASHBOARD_PANEL_CLASS}>
-                <div className="mb-4 flex items-center gap-2">
-                  <Users className="h-5 w-5 text-slate-950" aria-hidden="true" />
-                  <h4 className="text-base font-semibold text-slate-950">Recipients</h4>
-                </div>
-                <div className="email-center-recipient-stack">
-                  <div className="email-center-recipient-option-list">
-                    {allowedRecipientOptions.map((option) => (
-                      <label
-                        key={option.id}
-                        className={clsx(
-                          "flex cursor-pointer gap-3 rounded-md border p-3 shadow-sm transition",
-                          recipientMode === option.id
-                            ? "border-[rgb(11,6,121)] bg-white ring-2 ring-[rgba(11,6,121,0.14)]"
-                            : "border-slate-200/80 bg-white/85 hover:border-slate-300",
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name="recipientMode"
-                          value={option.id}
-                          checked={recipientMode === option.id}
-                          onChange={() => setRecipientMode(option.id)}
-                          className="mt-1"
-                        />
-                        <span>
-                          <span className="block text-sm font-semibold text-slate-900">{option.label}</span>
-                          <span className="block text-xs text-slate-600">{option.description}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+                  <label className={FIELD_SHELL_CLASS}>
+                    <span className={FIELD_LABEL_CLASS}>Recipients</span>
+                    <select
+                      value={recipientMode}
+                      onChange={(event) => setRecipientMode(event.target.value as RecipientMode)}
+                      className={SELECT_CLASS}
+                    >
+                      {allowedRecipientOptions.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedRecipientOption?.description && (
+                      <span className="mt-2 block text-xs text-slate-600">{selectedRecipientOption.description}</span>
+                    )}
+                  </label>
                   <div className="email-center-recipient-details">
                     {recipientMode === "test" && (
                       <label className={FIELD_SHELL_CLASS}>
@@ -2320,7 +2999,7 @@ export function EmailCenter() {
                       </label>
                     )}
                     <div className="rounded-md border border-slate-200/80 bg-white/85 px-3 py-2 text-sm text-slate-700 shadow-sm">
-                      Estimated recipients: <span className="font-semibold">{recipientEstimate}</span>
+                      Recipients: <span className="font-semibold">{recipientEstimate}</span>
                       {isBulkRecipientMode && bulkRecipientEstimate.error ? (
                         <span className="ml-2 text-xs font-medium text-amber-700">
                           {bulkRecipientEstimate.error}
@@ -2332,6 +3011,33 @@ export function EmailCenter() {
                           {bulkRecipientEstimate.recipients.map((recipient) => recipient.email).join(", ")}
                         </div>
                       )}
+                    </div>
+                    <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
+                      <ExclamationCircleIcon className="mt-0.5 h-4 w-4 flex-none" aria-hidden="true" />
+                      <span>
+                        CC and BCC recipients receive a copy of every individual recipient email in this campaign,
+                        not a single campaign summary.
+                      </span>
+                    </div>
+                    <div className="email-center-copy-recipient-grid">
+                      <label className={FIELD_SHELL_CLASS}>
+                        <span className={FIELD_LABEL_CLASS}>CC Recipients</span>
+                        <input
+                          value={ccRecipients}
+                          onChange={(event) => setCcRecipients(event.target.value)}
+                          placeholder="cc@example.com, office@example.com"
+                          className={INPUT_CLASS}
+                        />
+                      </label>
+                      <label className={FIELD_SHELL_CLASS}>
+                        <span className={FIELD_LABEL_CLASS}>BCC Recipients</span>
+                        <input
+                          value={bccRecipients}
+                          onChange={(event) => setBccRecipients(event.target.value)}
+                          placeholder="hidden@example.com"
+                          className={INPUT_CLASS}
+                        />
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -2388,7 +3094,7 @@ export function EmailCenter() {
                     <span className={FIELD_LABEL_CLASS}>Preview recipient</span>
                     <select
                       value={selectedPreviewRecipient?.id || ""}
-                      onChange={(event) => setPreviewRecipientKey(event.target.value)}
+                      onChange={(event) => handlePreviewRecipientChange(event.target.value)}
                       className={SELECT_CLASS}
                     >
                       {previewRecipientOptions.map((recipient) => (
@@ -2407,6 +3113,7 @@ export function EmailCenter() {
                     ref={editablePreviewFrameRef}
                     title="Email template preview"
                     sandbox="allow-scripts allow-modals"
+                    onLoad={handleEditablePreviewFrameLoad}
                     srcDoc={editablePreviewSrcDoc}
                     className="email-center-preview-frame email-center-preview-frame--send rounded-md border border-slate-300 bg-white shadow-inner"
                   />

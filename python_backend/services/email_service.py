@@ -1458,6 +1458,8 @@ def send_campaign_email(
     html: str,
     plain_text: Optional[str] = None,
     *,
+    cc: Optional[Iterable[str] | str] = None,
+    bcc: Optional[Iterable[str]] = None,
     headers: Optional[Mapping[str, str]] = None,
     raise_on_failure: bool = True,
 ) -> None:
@@ -1474,6 +1476,8 @@ def send_campaign_email(
         plain_text,
         from_address=_EMAIL_DEFAULT_FROM,
         reply_to=_EMAIL_DEFAULT_REPLY_TO,
+        cc=cc,
+        bcc=bcc,
         headers=headers,
         raise_on_failure=raise_on_failure,
         enforce_trufusion_sender=True,

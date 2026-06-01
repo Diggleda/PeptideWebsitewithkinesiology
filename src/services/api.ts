@@ -2006,6 +2006,8 @@ export type EmailCenterCampaign = {
   campaignType?: string;
   templateId?: string;
   subject?: string;
+  ccRecipients?: string[];
+  bccRecipients?: string[];
   status?: string;
   recipientCount?: number;
   counts?: Record<string, number>;
@@ -2066,6 +2068,16 @@ export const emailCenterAPI = {
       headers: { Accept: 'application/json' },
       credentials: 'include',
       body: JSON.stringify(payload),
+    });
+  },
+  uploadImageAsset: async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return fetchWithAuth(`${API_BASE_URL}/admin/email/assets/upload`, {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+      credentials: 'include',
+      body: formData,
     });
   },
   createCampaign: async (payload: Record<string, unknown>) => {

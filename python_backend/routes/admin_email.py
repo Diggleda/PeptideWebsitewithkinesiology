@@ -72,6 +72,47 @@ def get_preview_asset(content_id: str):
     return handle_action(action)
 
 
+@blueprint.get("/uploaded-assets/<asset_id>")
+def get_uploaded_asset(asset_id: str):
+    def action():
+        image = email_campaign_service.get_uploaded_image_asset(asset_id)
+        response = Response(image["data"], mimetype=image["mime_type"])
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        response.headers["Content-Disposition"] = f'inline; filename="{image["filename"]}"'
+        return response
+
+    return handle_action(action)
+
+
+@blueprint.post("/assets/upload")
+@require_auth
+def upload_asset():
+    def action():
+        _current_admin()
+        incoming = request.files.get("file") if request.files else None
+        if not incoming:
+            raise email_campaign_service.service_error("Image file is required", 400)
+        data = bytearray()
+        max_bytes = email_campaign_service._MAX_UPLOADED_IMAGE_ASSET_BYTES
+        while True:
+            chunk = incoming.stream.read(64 * 1024)
+            if not chunk:
+                break
+            data.extend(chunk)
+            if len(data) > max_bytes:
+                max_mb = round(max_bytes / (1024 * 1024), 1)
+                raise email_campaign_service.service_error(f"Image file is too large (max {max_mb} MB)", 413)
+        asset_base_url = f"{request.host_url.rstrip('/')}/api/admin/email"
+        return email_campaign_service.save_uploaded_image_asset(
+            data=bytes(data),
+            filename=incoming.filename,
+            mime_type=incoming.mimetype,
+            asset_base_url=asset_base_url,
+        )
+
+    return handle_action(action, status=201)
+
+
 @blueprint.post("/test")
 @require_auth
 def send_test():

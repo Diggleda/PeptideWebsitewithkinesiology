@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import unittest
 import sys
 import types
+from pathlib import Path
 from unittest.mock import patch
 
 fake_pymysql = types.ModuleType("pymysql")
@@ -119,6 +121,31 @@ class EmailCampaignServiceTests(unittest.TestCase):
             },
         )
 
+    def test_uploaded_image_asset_round_trips_from_data_dir(self) -> None:
+        png_data = (
+            b"\x89PNG\r\n\x1a\n"
+            b"\x00\x00\x00\rIHDR"
+            b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+            b"\x1f\x15\xc4\x89"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(
+            email_campaign_service,
+            "get_config",
+            return_value=types.SimpleNamespace(data_dir=Path(tmpdir), frontend_base_url="http://localhost:3000"),
+        ):
+            saved = email_campaign_service.save_uploaded_image_asset(
+                data=png_data,
+                filename="replacement.png",
+                mime_type="image/png",
+                asset_base_url="https://api.example.test/api/admin/email",
+            )
+            self.assertEqual(saved["mimeType"], "image/png")
+            self.assertIn("/api/admin/email/uploaded-assets/email_img_", saved["url"])
+
+            loaded = email_campaign_service.get_uploaded_image_asset(saved["assetId"])
+            self.assertEqual(loaded["mime_type"], "image/png")
+            self.assertEqual(loaded["data"], png_data)
+
     def test_draft_counts_test_recipient_and_preserves_schedule(self) -> None:
         admin = {"id": "admin_1", "role": "admin"}
         captured: list[tuple[dict, list]] = []
@@ -152,6 +179,49 @@ class EmailCampaignServiceTests(unittest.TestCase):
         self.assertEqual(response["campaign"]["scheduledAt"], "2030-01-02T03:04:00Z")
         self.assertEqual(captured[0][0]["recipient_count"], 1)
         self.assertEqual(captured[0][1], [])
+
+    def test_campaign_stores_cc_and_bcc_recipients(self) -> None:
+        admin = {"id": "admin_1", "role": "admin"}
+        captured: list[tuple[dict, list]] = []
+
+        def create_campaign(campaign, recipients):
+            captured.append((campaign, list(recipients)))
+            return campaign
+
+        with patch.object(email_campaign_service.email_campaign_repository, "create_campaign", side_effect=create_campaign), \
+            patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={}), \
+            patch.object(email_campaign_service.email_campaign_repository, "log_event"):
+            response = email_campaign_service.create_campaign(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "subject": "Delegate Links are now available",
+                    "variables": {
+                        "doctor_name": "Dr. Ada Lovelace",
+                        "clinic_name": "Analytical Clinic",
+                        "delegate_links_url": "https://trufusionlabs.com/account?tab=delegate-links",
+                        "support_email": "support@trufusionlabs.com",
+                    },
+                    "recipientSelection": {"mode": "test", "testEmail": "admin@example.com"},
+                    "status": "draft",
+                    "ccRecipients": "CC One <cc@example.com>, office@example.com",
+                    "bccRecipients": ["hidden@example.com", "hidden@example.com"],
+                },
+                admin=admin,
+            )
+
+        campaign_record = captured[0][0]
+        self.assertEqual(
+            campaign_record["variables_json"][email_campaign_service._CC_RECIPIENTS_VARIABLE_KEY],
+            ["cc@example.com", "office@example.com"],
+        )
+        self.assertEqual(
+            campaign_record["variables_json"][email_campaign_service._BCC_RECIPIENTS_VARIABLE_KEY],
+            ["hidden@example.com"],
+        )
+        self.assertEqual(response["campaign"]["ccRecipients"], ["cc@example.com", "office@example.com"])
+        self.assertEqual(response["campaign"]["bccRecipients"], ["hidden@example.com"])
+        self.assertNotIn(email_campaign_service._CC_RECIPIENTS_VARIABLE_KEY, response["campaign"]["variables"])
+        self.assertNotIn(email_campaign_service._BCC_RECIPIENTS_VARIABLE_KEY, response["campaign"]["variables"])
 
     def test_delete_draft_campaign_rejects_non_drafts(self) -> None:
         with patch.object(
@@ -471,7 +541,10 @@ class EmailCampaignServiceTests(unittest.TestCase):
                     "campaign_type": "announcement",
                     "subject": "Delegate Links are now available",
                     "campaign_status": "sending",
-                    "campaign_variables_json": {},
+                    "campaign_variables_json": {
+                        email_campaign_service._CC_RECIPIENTS_VARIABLE_KEY: ["cc@example.com"],
+                        email_campaign_service._BCC_RECIPIENTS_VARIABLE_KEY: ["bcc@example.com"],
+                    },
                 }
             ],
         ), patch.object(email_campaign_service.email_campaign_repository, "is_unsubscribed", return_value=False), \
@@ -487,6 +560,8 @@ class EmailCampaignServiceTests(unittest.TestCase):
         self.assertIn(("emr_1", "sent"), updates)
         self.assertIn(("emc_1", "sent"), campaign_updates)
         send_email.assert_called_once()
+        self.assertEqual(send_email.call_args.kwargs["cc"], ["cc@example.com"])
+        self.assertEqual(send_email.call_args.kwargs["bcc"], ["bcc@example.com"])
 
     def test_worker_polls_bounces_during_send_and_after_finish(self) -> None:
         poll_forces: list[bool] = []
