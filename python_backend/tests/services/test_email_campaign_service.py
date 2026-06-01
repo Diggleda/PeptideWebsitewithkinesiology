@@ -223,6 +223,33 @@ class EmailCampaignServiceTests(unittest.TestCase):
         self.assertNotIn(email_campaign_service._CC_RECIPIENTS_VARIABLE_KEY, response["campaign"]["variables"])
         self.assertNotIn(email_campaign_service._BCC_RECIPIENTS_VARIABLE_KEY, response["campaign"]["variables"])
 
+    def test_test_email_forwards_cc_and_bcc_recipients(self) -> None:
+        admin = {"id": "admin_1", "role": "admin"}
+
+        with patch.object(email_campaign_service.email_service, "send_campaign_test_email") as send_test, \
+            patch.object(email_campaign_service.email_campaign_repository, "log_event"):
+            response = email_campaign_service.send_test_email(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "subject": "Delegate Links are now available",
+                    "recipientEmail": "admin@example.com",
+                    "variables": {
+                        "doctor_name": "Dr. Ada Lovelace",
+                        "clinic_name": "Analytical Clinic",
+                        "delegate_links_url": "https://trufusionlabs.com/account?tab=delegate-links",
+                        "support_email": "support@trufusionlabs.com",
+                    },
+                    "ccRecipients": "CC One <cc@example.com>, office@example.com",
+                    "bccRecipients": ["hidden@example.com", "hidden@example.com"],
+                },
+                admin=admin,
+            )
+
+        self.assertTrue(response["ok"])
+        send_test.assert_called_once()
+        self.assertEqual(send_test.call_args.kwargs["cc"], ["cc@example.com", "office@example.com"])
+        self.assertEqual(send_test.call_args.kwargs["bcc"], ["hidden@example.com"])
+
     def test_delete_draft_campaign_rejects_non_drafts(self) -> None:
         with patch.object(
             email_campaign_service.email_campaign_repository,

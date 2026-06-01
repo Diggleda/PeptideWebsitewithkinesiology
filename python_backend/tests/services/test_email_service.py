@@ -4,6 +4,32 @@ from unittest.mock import patch
 
 
 class EmailServiceTests(unittest.TestCase):
+    def test_campaign_test_email_forwards_cc_and_bcc(self):
+        from python_backend.services import email_service
+
+        with patch.object(email_service, "send_campaign_email") as send_campaign_email:
+            email_service.send_campaign_test_email(
+                "admin@example.com",
+                "[TEST] Delegate Links are now available",
+                "<p>Hello</p>",
+                "Hello",
+                cc=["cc@example.com"],
+                bcc=["bcc@example.com"],
+                headers={"X-Trufusion-Campaign-Template": "delegate_links_announcement"},
+            )
+
+        send_campaign_email.assert_called_once()
+        self.assertEqual(send_campaign_email.call_args.kwargs["cc"], ["cc@example.com"])
+        self.assertEqual(send_campaign_email.call_args.kwargs["bcc"], ["bcc@example.com"])
+        self.assertEqual(
+            send_campaign_email.call_args.kwargs["headers"],
+            {
+                "X-Trufusion-Campaign-Test": "1",
+                "X-Trufusion-Campaign-Template": "delegate_links_announcement",
+            },
+        )
+        self.assertTrue(send_campaign_email.call_args.kwargs["raise_on_failure"])
+
     def test_shipping_status_email_bccs_pgibbons_trufusionlabs(self):
         from python_backend.services import email_service
 

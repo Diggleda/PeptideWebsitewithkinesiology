@@ -1098,6 +1098,8 @@ def send_test_email(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         f"[TEST] {subject}",
         rendered["html"],
         rendered["plainText"],
+        cc=cc_recipients,
+        bcc=bcc_recipients,
         headers={
             "X-Trufusion-Campaign-Template": str(template["id"]),
             "X-Trufusion-Campaign-Admin": admin_id,

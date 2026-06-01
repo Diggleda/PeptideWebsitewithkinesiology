@@ -1490,6 +1490,8 @@ def send_campaign_test_email(
     html: str,
     plain_text: Optional[str] = None,
     *,
+    cc: Optional[Iterable[str] | str] = None,
+    bcc: Optional[Iterable[str] | str] = None,
     headers: Optional[Mapping[str, str]] = None,
 ) -> None:
     """
@@ -1504,6 +1506,8 @@ def send_campaign_test_email(
         subject,
         html,
         plain_text,
+        cc=cc,
+        bcc=bcc,
         headers=merged_headers,
         raise_on_failure=True,
     )
