@@ -2006,6 +2006,8 @@ export type EmailCenterCampaign = {
   campaignType?: string;
   templateId?: string;
   subject?: string;
+  recipientSelection?: Record<string, unknown> | null;
+  testRecipientEmail?: string | null;
   ccRecipients?: string[];
   bccRecipients?: string[];
   status?: string;

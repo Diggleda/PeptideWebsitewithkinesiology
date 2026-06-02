@@ -121,6 +121,11 @@ const formatRecipientListValue = (value?: unknown) => {
   return String(value || "").trim();
 };
 
+const recipientModeFromValue = (value: unknown): RecipientMode | null => {
+  const mode = String(value || "").trim() as RecipientMode;
+  return RECIPIENT_OPTIONS.some((option) => option.id === mode) ? mode : null;
+};
+
 const getTemplateVariables = (template?: EmailCenterTemplate | null): string[] =>
   Array.isArray(template?.variables) ? template.variables.filter(Boolean) : [];
 
@@ -454,27 +459,36 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     --brand-blue-2: rgb(60, 103, 183);
     --brand-blue-2-rgb: 60, 103, 183;
   }
-  .email-center-preview-edit-button {
-    align-items: center;
-    background: #0b0679;
-    border: 0;
-    border-radius: 999px;
-    box-shadow: 0 10px 25px rgba(15, 23, 42, 0.22);
-    color: #ffffff;
-    cursor: pointer;
-    display: none;
-    height: 34px;
-    justify-content: center;
-    padding: 0;
-    position: fixed;
-    width: 34px;
-    z-index: 2147483647;
-  }
-  .email-center-preview-edit-button svg {
-    height: 17px;
-    pointer-events: none;
-    width: 17px;
-  }
+	  .email-center-preview-edit-button {
+	    align-items: center;
+	    background: #ffffff;
+	    border: 2px solid rgb(11, 6, 121);
+	    border-radius: 999px;
+	    box-shadow: 0 6px 16px -12px rgba(15, 23, 42, 0.45);
+	    color: rgb(11, 6, 121);
+	    cursor: pointer;
+	    display: none;
+	    height: 26px;
+	    justify-content: center;
+	    padding: 0;
+	    position: fixed;
+	    transition: transform 120ms ease, box-shadow 120ms ease, color 120ms ease, border-color 120ms ease;
+	    width: 26px;
+	    z-index: 2147483647;
+	  }
+	  .email-center-preview-edit-button:hover,
+	  .email-center-preview-edit-button:focus-visible {
+	    border-color: rgb(64, 149, 219);
+	    box-shadow: 0 10px 18px -12px rgba(15, 23, 42, 0.5);
+	    color: rgb(64, 149, 219);
+	    outline: none;
+	    transform: translateY(-1px);
+	  }
+	  .email-center-preview-edit-button svg {
+	    height: 12px;
+	    pointer-events: none;
+	    width: 12px;
+	  }
   .email-center-preview-variable-button {
     align-items: center;
     background: rgba(148, 163, 184, 0.12);
@@ -607,6 +621,40 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
   var IMAGE_UPLOAD_REQUEST_TYPE = "trufusion-email-center-preview-image-upload-request";
   var IMAGE_UPLOAD_RESPONSE_TYPE = "trufusion-email-center-preview-image-upload-response";
   var EDITABLE_SELECTOR = "h1,h2,h3,h4,h5,h6,p,li,a,span,td,th,img";
+  var PASTED_TEXT_COLOR = "#000000";
+  var PASTED_LINK_COLOR = "#0B0679";
+  var PASTE_TOKEN_PATTERN = /(https?:\\/\\/[^\\s<>"']+|www\\.[^\\s<>"']+|[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,})/gi;
+  var PASTE_BLOCK_TAGS = {
+    ADDRESS: true,
+    ARTICLE: true,
+    ASIDE: true,
+    BLOCKQUOTE: true,
+    DIV: true,
+    FIGCAPTION: true,
+    FIGURE: true,
+    FOOTER: true,
+    H1: true,
+    H2: true,
+    H3: true,
+    H4: true,
+    H5: true,
+    H6: true,
+    HEADER: true,
+    LI: true,
+    MAIN: true,
+    NAV: true,
+    OL: true,
+    P: true,
+    SECTION: true,
+    TABLE: true,
+    TBODY: true,
+    TD: true,
+    TFOOT: true,
+    TH: true,
+    THEAD: true,
+    TR: true,
+    UL: true
+  };
   var VARIABLES = ${serializeForInlineScript(lockedVariables)};
   var VARIABLE_PLACEHOLDER_PATTERN = /{{\\s*([a-zA-Z0-9_]+)\\s*}}/g;
   var button = document.createElement("button");
@@ -625,10 +673,10 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
   var imageUploadRequestSequence = 0;
   var pendingImageUploads = {};
 
-  button.type = "button";
-  button.className = "email-center-preview-edit-button";
-  button.setAttribute("aria-label", "Edit section");
-  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+	  button.type = "button";
+	  button.className = "email-center-preview-edit-button";
+	  button.setAttribute("aria-label", "Edit section");
+	  button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
   variableButton.type = "button";
   variableButton.className = "email-center-preview-variable-button timestamp-chip__add-button";
   variableButton.setAttribute("aria-label", "Add variable");
@@ -701,6 +749,151 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     while (element.firstChild) {
       element.removeChild(element.firstChild);
     }
+  }
+
+  function appendLineBreakIfNeeded(fragment) {
+    if (!fragment.lastChild || fragment.lastChild.nodeName === "BR") return;
+    fragment.appendChild(document.createElement("br"));
+  }
+
+  function trimPastedToken(value) {
+    var token = String(value || "");
+    var trailing = "";
+    while (/[.,;:!?)]$/.test(token)) {
+      trailing = token.slice(-1) + trailing;
+      token = token.slice(0, -1);
+    }
+    return { token: token, trailing: trailing };
+  }
+
+  function pastedLinkHref(token) {
+    var value = String(token || "").trim();
+    if (!value) return "";
+    if (/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)) return "mailto:" + value;
+    if (/^www\\./i.test(value)) return "https://" + value;
+    return value;
+  }
+
+  function makePastedTextSpan(text) {
+    var span = document.createElement("span");
+    span.style.color = PASTED_TEXT_COLOR;
+    span.style.webkitTextFillColor = PASTED_TEXT_COLOR;
+    span.textContent = text;
+    return span;
+  }
+
+  function makePastedLink(text, href) {
+    var anchor = document.createElement("a");
+    anchor.href = href || pastedLinkHref(text);
+    anchor.style.color = PASTED_LINK_COLOR;
+    anchor.style.textDecoration = "none";
+    anchor.textContent = text;
+    return anchor;
+  }
+
+  function appendPastedText(fragment, text) {
+    var source = String(text || "");
+    if (!source) return;
+    var cursor = 0;
+    var match = null;
+    PASTE_TOKEN_PATTERN.lastIndex = 0;
+    while ((match = PASTE_TOKEN_PATTERN.exec(source))) {
+      if (match.index > cursor) {
+        fragment.appendChild(makePastedTextSpan(source.slice(cursor, match.index)));
+      }
+      var parsed = trimPastedToken(match[0]);
+      if (parsed.token) {
+        fragment.appendChild(makePastedLink(parsed.token, pastedLinkHref(parsed.token)));
+      }
+      if (parsed.trailing) {
+        fragment.appendChild(makePastedTextSpan(parsed.trailing));
+      }
+      cursor = match.index + match[0].length;
+    }
+    if (cursor < source.length) {
+      fragment.appendChild(makePastedTextSpan(source.slice(cursor)));
+    }
+  }
+
+  function appendSanitizedPastedNode(fragment, node) {
+    if (!node) return;
+    if (node.nodeType === Node.TEXT_NODE) {
+      appendPastedText(fragment, node.nodeValue || "");
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    if (node.matches && node.matches("script,style,meta,link,head,title")) return;
+    if (node.tagName === "BR") {
+      fragment.appendChild(document.createElement("br"));
+      return;
+    }
+    if (node.tagName === "A") {
+      var linkText = String(node.textContent || node.getAttribute("href") || "").trim();
+      var linkHref = String(node.getAttribute("href") || "").trim() || pastedLinkHref(linkText);
+      if (linkText) {
+        fragment.appendChild(makePastedLink(linkText, linkHref));
+      }
+      return;
+    }
+    var isBlock = Boolean(PASTE_BLOCK_TAGS[node.tagName]);
+    if (isBlock && fragment.childNodes.length > 0) appendLineBreakIfNeeded(fragment);
+    Array.prototype.slice.call(node.childNodes).forEach(function (child) {
+      appendSanitizedPastedNode(fragment, child);
+    });
+    if (isBlock) appendLineBreakIfNeeded(fragment);
+  }
+
+  function buildPlainTextPasteFragment(text) {
+    var fragment = document.createDocumentFragment();
+    var lines = String(text || "").replace(/\\r\\n/g, "\\n").replace(/\\r/g, "\\n").split("\\n");
+    lines.forEach(function (line, index) {
+      if (index > 0) fragment.appendChild(document.createElement("br"));
+      appendPastedText(fragment, line);
+    });
+    return fragment;
+  }
+
+  function buildHtmlPasteFragment(html, fallbackText) {
+    var fragment = document.createDocumentFragment();
+    var parser = new DOMParser();
+    var parsed = parser.parseFromString(String(html || ""), "text/html");
+    Array.prototype.slice.call((parsed.body || parsed).childNodes).forEach(function (node) {
+      appendSanitizedPastedNode(fragment, node);
+    });
+    while (fragment.lastChild && fragment.lastChild.nodeName === "BR") {
+      fragment.removeChild(fragment.lastChild);
+    }
+    if (!fragment.childNodes.length && fallbackText) {
+      return buildPlainTextPasteFragment(fallbackText);
+    }
+    return fragment;
+  }
+
+  function insertPastedFragment(fragment) {
+    if (!editingTarget || !fragment || !fragment.childNodes.length) return;
+    restoreSavedSelection();
+    removeVariableButtonFromDocument();
+    var selection = window.getSelection();
+    var range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    if (!selectionBelongsToEditingTarget(range)) {
+      placeCaretAtEnd(editingTarget);
+      selection = window.getSelection();
+      range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    }
+    if (!range || rangeTouchesVariable(range)) return;
+    var lastNode = fragment.lastChild;
+    range.deleteContents();
+    range.insertNode(fragment);
+    if (lastNode) {
+      range.setStartAfter(lastNode);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    saveCurrentEditingSelection();
+    markEditingHtmlSafe();
+    postHtmlUpdate();
+    positionVariableButton();
   }
 
   function renderEditingVariableMarker(marker) {
@@ -1071,11 +1264,11 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     button.style.display = "none";
   }
 
-  function positionButton(target) {
-    var rect = target.getBoundingClientRect();
-    var top = Math.max(8, Math.min(window.innerHeight - 42, rect.top + 8));
-    var left = Math.max(8, Math.min(window.innerWidth - 42, rect.right - 42));
-    button.style.top = top + "px";
+	  function positionButton(target) {
+	    var rect = target.getBoundingClientRect();
+	    var top = Math.max(8, Math.min(window.innerHeight - 34, rect.top + 8));
+	    var left = Math.max(8, Math.min(window.innerWidth - 34, rect.right - 34));
+	    button.style.top = top + "px";
     button.style.left = left + "px";
     button.style.display = "inline-flex";
   }
@@ -1479,6 +1672,22 @@ const buildEmailPreviewEditorAssets = (variableMap: Record<string, string>) => {
     }
   }, true);
 
+  document.addEventListener("paste", function (event) {
+    if (!editingTarget) return;
+    var clipboard = event.clipboardData || window.clipboardData;
+    if (!clipboard) return;
+    if (selectionTouchesVariable("insertFromPaste")) {
+      event.preventDefault();
+      return;
+    }
+    var html = clipboard.getData ? clipboard.getData("text/html") : "";
+    var text = clipboard.getData ? clipboard.getData("text/plain") : "";
+    var fragment = html ? buildHtmlPasteFragment(html, text) : buildPlainTextPasteFragment(text);
+    if (!fragment || !fragment.childNodes.length) return;
+    event.preventDefault();
+    insertPastedFragment(fragment);
+  }, true);
+
   document.addEventListener("input", function () {
     if (!editingTarget) return;
     if (!hasRequiredVariableMarkers()) {
@@ -1738,12 +1947,12 @@ export function EmailCenter() {
   const emailCenterTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const editablePreviewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const editedPreviewHtmlRef = useRef("");
+  const previewEditedRef = useRef(false);
   const pendingDraftCustomHtmlRef = useRef("");
   const pendingEmailCampaignRefreshRef = useRef(false);
   const pendingPreviewScrollRestoreRef = useRef<PreviewScrollSnapshot | null>(null);
   const previewScrollRestoreSequenceRef = useRef(0);
   const hasCampaignRowsRef = useRef(false);
-  const [previewEdited, setPreviewEdited] = useState(false);
   const [emailCenterTabIndicator, setEmailCenterTabIndicator] = useState<{
     left: number;
     width: number;
@@ -1752,12 +1961,12 @@ export function EmailCenter() {
 
   const resetPreviewEdits = useCallback(() => {
     editedPreviewHtmlRef.current = "";
-    setPreviewEdited(false);
+    previewEditedRef.current = false;
   }, []);
 
   const getCustomHtmlOverride = useCallback(
-    () => (previewEdited ? editedPreviewHtmlRef.current.trim() : ""),
-    [previewEdited],
+    () => (previewEditedRef.current ? editedPreviewHtmlRef.current.trim() : ""),
+    [],
   );
 
   const capturePreviewScrollSnapshot = useCallback((): PreviewScrollSnapshot => {
@@ -1904,7 +2113,7 @@ export function EmailCenter() {
       if (!data) return;
       if (data.type === "trufusion-email-center-preview-edited") {
         editedPreviewHtmlRef.current = String(data.html || "");
-        setPreviewEdited(true);
+        previewEditedRef.current = true;
         setTestToken("");
         setTestTokenExpiresAt(null);
         return;
@@ -2291,12 +2500,48 @@ export function EmailCenter() {
     setScheduledAt(isoToScheduleInput(pendingPreparedDraft.scheduledAt));
     setCcRecipients(formatRecipientListValue(pendingPreparedDraft.ccRecipients));
     setBccRecipients(formatRecipientListValue(pendingPreparedDraft.bccRecipients));
+    const draftSelection: Record<string, unknown> =
+      pendingPreparedDraft.recipientSelection && typeof pendingPreparedDraft.recipientSelection === "object"
+        ? pendingPreparedDraft.recipientSelection
+        : {};
+    const draftRecipientMode = recipientModeFromValue(draftSelection.mode);
+    const nextRecipientMode =
+      draftRecipientMode && allowedRecipientOptions.some((option) => option.id === draftRecipientMode)
+        ? draftRecipientMode
+        : allowedRecipientOptions[0]?.id || "test";
+    setRecipientMode(nextRecipientMode);
+    setTestEmail(
+      nextRecipientMode === "test"
+        ? firstText(draftSelection.testEmail, draftSelection.test_email, draftSelection.email)
+        : "",
+    );
+    setSelectedPhysicianEmail(
+      nextRecipientMode === "selected_physician"
+        ? firstText(
+            draftSelection.selectedPhysicianEmail,
+            draftSelection.selected_physician_email,
+            draftSelection.email,
+          )
+        : "",
+    );
+    setCustomEmails(
+      nextRecipientMode === "custom"
+        ? formatRecipientListValue(
+            draftSelection.emails
+              ?? draftSelection.customEmails
+              ?? draftSelection.custom_emails
+              ?? draftSelection.emailList
+              ?? draftSelection.email_list,
+          )
+        : "",
+    );
+    setTestRecipientEmail(String(pendingPreparedDraft.testRecipientEmail || "").trim());
     setTestToken("");
     setTestTokenExpiresAt(null);
     setConfirmationText("");
     setPendingPreparedDraft(null);
     toast.success("Draft loaded. Review recipients before sending.");
-  }, [pendingPreparedDraft, selectedTemplate]);
+  }, [allowedRecipientOptions, pendingPreparedDraft, selectedTemplate]);
 
   useEffect(() => {
     if (templatesForType.length === 0) return;
@@ -2340,7 +2585,7 @@ export function EmailCenter() {
           if (normalizedCustomHtml) {
             pendingDraftCustomHtmlRef.current = "";
             editedPreviewHtmlRef.current = normalizedCustomHtml;
-            setPreviewEdited(true);
+            previewEditedRef.current = true;
           } else {
             resetPreviewEdits();
           }
@@ -2470,6 +2715,7 @@ export function EmailCenter() {
         variables: previewVariables,
         customHtml: customHtml || undefined,
         recipientSelection: buildRecipientSelection(),
+        testRecipientEmail: testRecipientEmail.trim() || undefined,
         ccRecipients: ccRecipients.trim() || undefined,
         bccRecipients: bccRecipients.trim() || undefined,
         status: mode === "draft" ? "draft" : undefined,
@@ -2568,8 +2814,8 @@ export function EmailCenter() {
           </div>
           {campaignsRefreshing && (
             <div className="flex shrink-0 justify-end pt-0.5">
-              <span className="inline-flex items-center rounded-md border border-slate-200 bg-white/85 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">
-                Updating
+              <span className="text-xs font-semibold text-slate-600">
+                Auto-updating
               </span>
             </div>
           )}

@@ -186,6 +186,7 @@ class EmailCampaignServiceTests(unittest.TestCase):
                         "support_email": "support@trufusionlabs.com",
                     },
                     "recipientSelection": {"mode": "test", "testEmail": "admin@example.com"},
+                    "testRecipientEmail": "qa@example.com",
                     "status": "draft",
                     "scheduledAt": "2030-01-02T03:04:00Z",
                 },
@@ -197,6 +198,70 @@ class EmailCampaignServiceTests(unittest.TestCase):
         self.assertEqual(response["campaign"]["scheduledAt"], "2030-01-02T03:04:00Z")
         self.assertEqual(captured[0][0]["recipient_count"], 1)
         self.assertEqual(captured[0][1], [])
+        self.assertEqual(
+            captured[0][0]["variables_json"][email_campaign_service._RECIPIENT_SELECTION_VARIABLE_KEY],
+            {"mode": "test", "testEmail": "admin@example.com"},
+        )
+        self.assertEqual(
+            captured[0][0]["variables_json"][email_campaign_service._TEST_RECIPIENT_EMAIL_VARIABLE_KEY],
+            "qa@example.com",
+        )
+        self.assertEqual(response["campaign"]["recipientSelection"], {"mode": "test", "testEmail": "admin@example.com"})
+        self.assertEqual(response["campaign"]["testRecipientEmail"], "qa@example.com")
+
+    def test_draft_preserves_custom_recipient_selection_and_test_email(self) -> None:
+        admin = {"id": "admin_1", "role": "admin"}
+        captured: list[tuple[dict, list]] = []
+
+        def create_campaign(campaign, recipients):
+            captured.append((campaign, list(recipients)))
+            return campaign
+
+        with patch.object(email_campaign_service.email_campaign_repository, "create_campaign", side_effect=create_campaign), \
+            patch.object(email_campaign_service.email_campaign_repository, "count_recipients_by_status", return_value={}), \
+            patch.object(email_campaign_service.email_campaign_repository, "log_event"), \
+            patch.object(email_campaign_service, "_repository_module") as repository_module:
+            repository_module.return_value.find_by_email.return_value = None
+            response = email_campaign_service.create_campaign(
+                {
+                    "templateId": "delegate_links_announcement",
+                    "subject": "Delegate Links are now available",
+                    "variables": {
+                        "doctor_name": "Dr. Ada Lovelace",
+                        "clinic_name": "Analytical Clinic",
+                        "delegate_links_url": "https://trufusionlabs.com/account?tab=delegate-links",
+                        "support_email": "support@trufusionlabs.com",
+                    },
+                    "recipientSelection": {
+                        "mode": "custom",
+                        "customEmails": "Doctor One <doctor.one@example.com>, doctor.two@example.com",
+                    },
+                    "testRecipientEmail": "qa@example.com",
+                    "status": "draft",
+                },
+                admin=admin,
+            )
+
+        expected_selection = {
+            "mode": "custom",
+            "emails": ["doctor.one@example.com", "doctor.two@example.com"],
+            "customEmails": "doctor.one@example.com, doctor.two@example.com",
+        }
+        campaign_record = captured[0][0]
+        self.assertEqual(campaign_record["recipient_count"], 2)
+        self.assertEqual(captured[0][1], [])
+        self.assertEqual(
+            campaign_record["variables_json"][email_campaign_service._RECIPIENT_SELECTION_VARIABLE_KEY],
+            expected_selection,
+        )
+        self.assertEqual(
+            campaign_record["variables_json"][email_campaign_service._TEST_RECIPIENT_EMAIL_VARIABLE_KEY],
+            "qa@example.com",
+        )
+        self.assertEqual(response["campaign"]["recipientSelection"], expected_selection)
+        self.assertEqual(response["campaign"]["testRecipientEmail"], "qa@example.com")
+        self.assertNotIn(email_campaign_service._RECIPIENT_SELECTION_VARIABLE_KEY, response["campaign"]["variables"])
+        self.assertNotIn(email_campaign_service._TEST_RECIPIENT_EMAIL_VARIABLE_KEY, response["campaign"]["variables"])
 
     def test_campaign_stores_cc_and_bcc_recipients(self) -> None:
         admin = {"id": "admin_1", "role": "admin"}

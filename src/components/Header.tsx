@@ -9421,7 +9421,7 @@ export function Header({
 		              aria-live="polite"
 		            >
 		              {accountOrdersLoading && <RefreshActionIcon spinning />}
-		              <span>Auto-Updating</span>
+		              <span>Auto-updating</span>
 		            </div>
 
 		            <div
@@ -10966,7 +10966,7 @@ export function Header({
 		                  className="patient-links-toolbar-control inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs font-medium text-slate-500"
 		                  aria-live="polite"
 		                >
-		                  <span>Updating…</span>
+		                  <span>Auto-updating</span>
 		                </div>
 		              )}
 		            <Button

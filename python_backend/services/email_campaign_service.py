@@ -38,10 +38,14 @@ _TEST_SENDS_LOCK = threading.Lock()
 _CUSTOM_HTML_VARIABLE_KEY = "__email_center_custom_html"
 _CC_RECIPIENTS_VARIABLE_KEY = "__email_center_cc_recipients"
 _BCC_RECIPIENTS_VARIABLE_KEY = "__email_center_bcc_recipients"
+_RECIPIENT_SELECTION_VARIABLE_KEY = "__email_center_recipient_selection"
+_TEST_RECIPIENT_EMAIL_VARIABLE_KEY = "__email_center_test_recipient_email"
 _CAMPAIGN_RESERVED_VARIABLE_KEYS = {
     _CUSTOM_HTML_VARIABLE_KEY,
     _CC_RECIPIENTS_VARIABLE_KEY,
     _BCC_RECIPIENTS_VARIABLE_KEY,
+    _RECIPIENT_SELECTION_VARIABLE_KEY,
+    _TEST_RECIPIENT_EMAIL_VARIABLE_KEY,
 }
 _MAX_CUSTOM_HTML_LENGTH = 500_000
 _MAX_UPLOADED_IMAGE_ASSET_BYTES = 8 * 1024 * 1024
@@ -905,6 +909,49 @@ def _payload_extra_recipients(payload: Dict[str, Any], *keys: str, message: str)
     return []
 
 
+def _normalize_campaign_recipient_selection(selection: Any) -> Dict[str, Any]:
+    selected = selection if isinstance(selection, dict) else {}
+    mode = str(selected.get("mode") or "test").strip() or "test"
+    normalized: Dict[str, Any] = {"mode": mode}
+    if mode == "test":
+        email = _normalize_email(selected.get("testEmail") or selected.get("test_email") or selected.get("email"))
+        if email:
+            normalized["testEmail"] = email
+    elif mode == "selected_physician":
+        email = _normalize_email(
+            selected.get("selectedPhysicianEmail")
+            or selected.get("selected_physician_email")
+            or selected.get("email")
+        )
+        if email:
+            normalized["selectedPhysicianEmail"] = email
+    elif mode == "custom":
+        emails_value = selected.get("emails")
+        if isinstance(emails_value, list):
+            emails = [_normalize_email(email) for email in emails_value]
+        else:
+            emails = _custom_emails_from_text(
+                selected.get("customEmails")
+                or selected.get("custom_emails")
+                or selected.get("emailList")
+                or selected.get("email_list")
+            )
+        deduped = [email for index, email in enumerate(emails) if email and email not in emails[:index]]
+        if deduped:
+            normalized["emails"] = deduped
+            normalized["customEmails"] = ", ".join(deduped)
+    return normalized
+
+
+def _payload_test_recipient_email(payload: Dict[str, Any]) -> str:
+    return _normalize_email(
+        payload.get("testRecipientEmail")
+        or payload.get("test_recipient_email")
+        or payload.get("recipientEmail")
+        or payload.get("recipient_email")
+    )
+
+
 def resolve_recipients(selection: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
     selected = selection if isinstance(selection, dict) else {}
     mode = str(selected.get("mode") or "test").strip()
@@ -1188,12 +1235,18 @@ def _campaign_to_api(campaign: Dict[str, Any]) -> Dict[str, Any]:
         message="Enter valid BCC recipient emails.",
         raise_on_empty_input=False,
     )
+    recipient_selection = _normalize_campaign_recipient_selection(
+        variables.pop(_RECIPIENT_SELECTION_VARIABLE_KEY, {})
+    )
+    test_recipient_email = _normalize_email(variables.pop(_TEST_RECIPIENT_EMAIL_VARIABLE_KEY, ""))
     variables = _strip_campaign_reserved_variables(variables)
     return {
         "id": campaign.get("id"),
         "campaignType": campaign.get("campaign_type"),
         "templateId": campaign.get("template_id"),
         "subject": campaign.get("subject"),
+        "recipientSelection": recipient_selection,
+        "testRecipientEmail": test_recipient_email or None,
         "ccRecipients": cc_recipients,
         "bccRecipients": bcc_recipients,
         "createdByAdminId": campaign.get("created_by_admin_id"),
@@ -1253,6 +1306,8 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         message="Enter valid BCC recipient emails.",
     )
     recipient_selection = payload.get("recipientSelection") or payload.get("recipient_selection")
+    recipient_selection_metadata = _normalize_campaign_recipient_selection(recipient_selection)
+    test_recipient_email = _payload_test_recipient_email(payload)
     recipients = _estimate_draft_recipients(recipient_selection) if save_as_draft else resolve_recipients(recipient_selection)
     selection_for_mode = recipient_selection if isinstance(recipient_selection, dict) else {}
     recipient_mode = str(selection_for_mode.get("mode") or "test").strip()
@@ -1292,6 +1347,8 @@ def create_campaign(payload: Dict[str, Any], *, admin: Dict[str, Any]) -> Dict[s
         "variables_json": {
             **variables,
             **({_CUSTOM_HTML_VARIABLE_KEY: custom_html} if custom_html else {}),
+            _RECIPIENT_SELECTION_VARIABLE_KEY: recipient_selection_metadata,
+            **({_TEST_RECIPIENT_EMAIL_VARIABLE_KEY: test_recipient_email} if test_recipient_email else {}),
             **({_CC_RECIPIENTS_VARIABLE_KEY: cc_recipients} if cc_recipients else {}),
             **({_BCC_RECIPIENTS_VARIABLE_KEY: bcc_recipients} if bcc_recipients else {}),
         },
@@ -1952,6 +2009,7 @@ def process_pending_campaign_emails(*, limit: int = 25, throttle_seconds: float 
                 message="Enter valid BCC recipient emails.",
                 raise_on_empty_input=False,
             )
+            campaign_variables = _strip_campaign_reserved_variables(campaign_variables)
             variables = {
                 **campaign_variables,
                 **dict(job.get("recipient_variables_json") or {}),

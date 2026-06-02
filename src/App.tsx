@@ -31360,7 +31360,7 @@ function MainApp() {
 		              </Button>
 		            ) : busy ? (
 		              <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-		                Updating…
+		                Auto-updating
 		              </span>
 		            ) : null}
 		          </div>
@@ -31606,7 +31606,7 @@ function MainApp() {
 	              </Button>
 		            ) : todoItemsRefreshing ? (
 		              <span className="shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-		                Updating…
+		                Auto-updating
 		              </span>
 		            ) : null}
 	            </div>
@@ -32263,7 +32263,7 @@ function MainApp() {
                 </Button>
 	              ) : salesRepHandDeliveryLoading ? (
 	                <span className="ml-auto shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-	                  Updating…
+	                  Auto-updating
 	                </span>
 	              ) : null}
             </div>
@@ -33430,7 +33430,7 @@ function MainApp() {
 			                            </Button>
 				                          ) : salesRepSalesSummaryLoading ? (
 				                            <span className="text-xs font-medium text-slate-500" aria-live="polite">
-				                              Updating…
+				                              Auto-updating
 				                            </span>
 				                          ) : null}
 			                        </div>
@@ -33809,7 +33809,7 @@ function MainApp() {
                             <div className="px-3 py-2 text-xs text-slate-500 rounded-md border border-slate-200 bg-slate-50/70">
                               {liveClientsUsingCachedSnapshot
                                 ? "Showing a recent presence snapshot while live status refreshes."
-                                : "Refreshing live presence…"}
+                                : "Auto-updating"}
                             </div>
                           )}
 	                        <div
@@ -35845,7 +35845,7 @@ function MainApp() {
 	                        </Button>
 		                      ) : adminHandDeliveryLoading ? (
 		                        <span className="ml-auto shrink-0 text-xs font-medium text-slate-500" aria-live="polite">
-		                          Updating…
+		                          Auto-updating
 		                        </span>
 		                      ) : null}
 	                    </div>
@@ -36136,7 +36136,7 @@ function MainApp() {
                           <div className="px-3 py-2 text-xs text-slate-500 rounded-md border border-slate-200 bg-slate-50/70">
                             {adminLiveUsersUsingCachedSnapshot
                               ? "Showing a recent presence snapshot while live status refreshes."
-                              : "Refreshing live presence…"}
+                              : "Auto-updating"}
                           </div>
                         )}
                         <div className="clients-controls-row flex flex-col gap-3 px-3 sm:px-1">
@@ -36463,7 +36463,7 @@ function MainApp() {
 			                          </Button>
 				                        ) : missingCertificatesLoading || certificateProductsLoading ? (
 				                          <span className="text-xs font-medium text-slate-500" aria-live="polite">
-				                            Updating…
+				                            Auto-updating
 				                          </span>
 				                        ) : null}
 		                      </div>
@@ -36972,7 +36972,7 @@ function MainApp() {
 							                        </Button>
 							                      ) : adminDashboardRefreshing ? (
 							                        <span className="order-2 sm:order-1 text-xs font-medium text-slate-500" aria-live="polite">
-							                          Updating…
+							                          Auto-updating
 							                        </span>
 							                      ) : null}
 						                    </div>
@@ -38576,7 +38576,7 @@ function MainApp() {
                         </Button>
 	                      ) : salesTrackingLoading || salesTrackingRefreshing ? (
 	                        <span className="sales-metric-refresh-button text-xs font-medium text-slate-500" aria-live="polite">
-	                          Updating…
+	                          Auto-updating
 	                        </span>
 	                      ) : null}
                     </div>
@@ -39013,7 +39013,7 @@ function MainApp() {
 	                        </Button>
 	                      ) : referralDataLoading ? (
 	                        <span className="text-xs font-medium text-slate-500" aria-live="polite">
-	                          Updating…
+	                          Auto-updating
 	                        </span>
 	                      ) : null}
                           </div>
@@ -39790,7 +39790,7 @@ function MainApp() {
                             </Button>
 	                          ) : referralDataLoading ? (
 	                            <span className="text-xs font-medium text-slate-500" aria-live="polite">
-	                              Updating…
+	                              Auto-updating
 	                            </span>
 	                          ) : null}
 	                      </div>
@@ -41332,7 +41332,7 @@ function MainApp() {
                               </Button>
                             ) : peptideNewsLoading ? (
                               <span className="text-xs font-medium text-slate-500" aria-live="polite">
-                                Updating…
+                                Auto-updating
                               </span>
                             ) : null}
                           </div>
@@ -41571,7 +41571,7 @@ function MainApp() {
 	                                </Button>
 	                              ) : peptideForumLoading ? (
 	                                <span className="text-xs font-medium text-slate-500" aria-live="polite">
-	                                  Updating…
+	                                  Auto-updating
 	                                </span>
 	                              ) : null}
 	                            </div>
