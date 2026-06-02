@@ -1,20 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head><meta charset="utf-8" /><title>TrufusionLabs Platform Update</title></head>
-  <body style="margin:0;background:#ffffff;color:#111827;font-family:Arial,Helvetica,sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;">
-      <tr><td align="center" style="padding:24px;">
-        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;border:1px solid #E5E7EB;border-radius:28px;corner-shape:squircle;overflow:hidden;">
-          <tr><td align="center" style="padding:24px 24px 0;"><img src="cid:trufusion-logo" width="320" alt="TrufusionLabs" style="max-width:70%;height:auto;border:0;" /></td></tr>
-          <tr><td style="padding:32px;">
-            <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0B0679;">PLATFORM UPDATE</p>
-            <h1 style="margin:0 0 14px;font-size:28px;line-height:1.2;color:#0B274B;">TrufusionLabs platform update</h1>
-            <p style="margin:0 0 18px;font-size:16px;line-height:1.55;color:#334155;">Hi {{ doctor_name }}, we have an approved platform update for {{ clinic_name }}.</p>
-            <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">Final campaign copy can be added by developers in this approved template before production use.</p>
-            <p style="margin:0;font-size:12px;color:#6b7280;">Questions? Contact <a href="mailto:{{ support_email }}" style="color:#0B0679;text-decoration:none;">{{ support_email }}</a>. <a href="{{ unsubscribe_url }}" style="color:#0B0679;text-decoration:none;">Unsubscribe</a>.</p>
-          </td></tr>
-        </table>
-      </td></tr>
+  <head>
+    <meta charset="utf-8" />
+    <title>TrufusionLabs Platform Update</title>
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+    <style>
+      :root {
+        color-scheme: light;
+        supported-color-schemes: light;
+      }
+      body,
+      table,
+      td,
+      p,
+      a,
+      h1 {
+        font-family: Arial, Helvetica, sans-serif;
+      }
+    </style>
+  </head>
+  <body bgcolor="#ffffff" style="margin:0;background:#ffffff;color:#111827;font-family:Arial,Helvetica,sans-serif;font-weight:400;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="width:100%;border-collapse:collapse;background:#ffffff;">
+      <tr>
+        <td align="center" style="padding:0 14px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="width:100%;max-width:680px;margin:0 auto;background:#ffffff;border:1px solid #E5E7EB;border-radius:28px;corner-shape:squircle;overflow:hidden;box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),0 6px 14px -10px rgba(15,23,42,0.35);">
+            <tr>
+              <td style="padding:24px 24px 0;" align="center">
+                <img src="cid:trufusion-logo" width="360" alt="TrufusionLabs" style="width:360px;max-width:70%;height:auto;display:block;border:0;outline:none;text-decoration:none;" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:40px 32px 8px;font-family:Arial,Helvetica,sans-serif;font-weight:400;">
+                <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0B0679;">PLATFORM UPDATE</p>
+                <h1 style="margin:0 0 14px;font-size:28px;font-weight:700;line-height:1.2;color:#0B274B;">TrufusionLabs platform update</h1>
+                <p style="margin:0 0 18px;font-size:16px;font-weight:400;line-height:1.55;color:#334155;">Hi {{ doctor_name }}, we have an approved platform update for {{ clinic_name }}.</p>
+                <p style="margin:0 0 24px;font-size:15px;font-weight:400;line-height:1.6;color:#334155;">Final campaign copy can be added by developers in this approved template before production use.</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 32px 32px;font-size:12px;font-weight:400;color:#6b7280;line-height:1.5;text-align:center;">
+                <p style="margin:0 0 4px;">Questions? Contact TrufusionLabs support at <a href="mailto:{{ support_email }}" style="color:#0B0679;text-decoration:none;">{{ support_email }}</a>.</p>
+                <p style="margin:0;">You are receiving this because you have a TrufusionLabs account. <a href="{{ unsubscribe_url }}" style="color:#0B0679;text-decoration:none;">Unsubscribe</a>.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
     </table>
   </body>
 </html>

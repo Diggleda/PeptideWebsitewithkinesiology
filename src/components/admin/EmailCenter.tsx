@@ -1734,6 +1734,7 @@ export function EmailCenter() {
   }>({ count: null, recipients: [], loading: false, error: null });
   const emailCenterRootRef = useRef<HTMLElement | null>(null);
   const scheduledAtInputRef = useRef<HTMLInputElement | null>(null);
+  const scheduledAtDraftRef = useRef("");
   const emailCenterTabsContainerRef = useRef<HTMLDivElement | null>(null);
   const editablePreviewFrameRef = useRef<HTMLIFrameElement | null>(null);
   const editedPreviewHtmlRef = useRef("");
@@ -2419,6 +2420,9 @@ export function EmailCenter() {
       toast.error("Select an email template first.");
       return;
     }
+    if (mode === "schedule") {
+      scheduledAtDraftRef.current = scheduledAt;
+    }
     setConfirmationText("");
     setPendingCampaignMode(mode);
   };
@@ -2438,14 +2442,13 @@ export function EmailCenter() {
     }
     let scheduleIso: string | null = null;
     if (mode === "schedule") {
-      const selectedScheduledAt = (scheduledAtInputRef.current?.value || scheduledAt).trim();
+      const selectedScheduledAt = (scheduledAtInputRef.current?.value || scheduledAtDraftRef.current || scheduledAt).trim();
       if (!selectedScheduledAt) {
         toast.error("Choose a scheduled send time first.");
         return;
       }
-      if (selectedScheduledAt !== scheduledAt) {
-        setScheduledAt(selectedScheduledAt);
-      }
+      scheduledAtDraftRef.current = selectedScheduledAt;
+      setScheduledAt(selectedScheduledAt);
       try {
         scheduleIso = scheduleInputToIso(selectedScheduledAt);
       } catch (error) {
@@ -2478,6 +2481,7 @@ export function EmailCenter() {
       setConfirmationText("");
       setPendingCampaignMode(null);
       if (mode === "schedule") {
+        scheduledAtDraftRef.current = "";
         setScheduledAt("");
       }
       const nextTab: CampaignTab = mode === "draft" ? "draft" : mode === "schedule" ? "scheduled" : "sent";
@@ -2488,6 +2492,21 @@ export function EmailCenter() {
     } finally {
       setSavingCampaign(false);
     }
+  };
+
+  const handleConfirmCampaignClick = () => {
+    if (!pendingCampaignMode) return;
+    if (pendingCampaignMode === "schedule") {
+      if (scheduledAtInputRef.current) {
+        scheduledAtDraftRef.current = scheduledAtInputRef.current.value || scheduledAtDraftRef.current;
+        scheduledAtInputRef.current.blur();
+      }
+      window.setTimeout(() => {
+        void createCampaign("schedule");
+      }, 0);
+      return;
+    }
+    void createCampaign(pendingCampaignMode);
   };
 
   const deleteDraftCampaign = async (campaign: EmailCenterCampaign) => {
@@ -2702,9 +2721,16 @@ export function EmailCenter() {
               <input
                 ref={scheduledAtInputRef}
                 type="datetime-local"
-                value={scheduledAt}
-                onInput={(event) => setScheduledAt(event.currentTarget.value)}
-                onChange={(event) => setScheduledAt(event.target.value)}
+                name="scheduledAt"
+                defaultValue={scheduledAt}
+                onInput={(event) => {
+                  scheduledAtDraftRef.current = event.currentTarget.value;
+                  setScheduledAt(event.currentTarget.value);
+                }}
+                onChange={(event) => {
+                  scheduledAtDraftRef.current = event.target.value;
+                  setScheduledAt(event.target.value);
+                }}
                 className={INPUT_CLASS}
                 autoFocus
               />
@@ -2742,10 +2768,7 @@ export function EmailCenter() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => {
-                if (!pendingCampaignMode) return;
-                void createCampaign(pendingCampaignMode);
-              }}
+              onClick={handleConfirmCampaignClick}
               disabled={savingCampaign}
               className="email-center-home-button squircle-sm gap-2"
             >

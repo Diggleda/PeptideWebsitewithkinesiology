@@ -89,6 +89,24 @@ class EmailCampaignServiceTests(unittest.TestCase):
                 self.assertIn("border-radius:28px", rendered["html"])
                 self.assertIn("corner-shape:squircle", rendered["html"])
 
+    def test_platform_update_uses_delegate_links_white_container(self) -> None:
+        rendered = email_campaign_service.render_email_template(
+            "platform_update",
+            {
+                "doctor_name": "Dr. Ada Lovelace",
+                "clinic_name": "Analytical Clinic",
+                "unsubscribe_url": "https://trufusionlabs.com/unsubscribe",
+                "support_email": "support@trufusionlabs.com",
+            },
+        )
+
+        self.assertIn('body bgcolor="#ffffff"', rendered["html"])
+        self.assertIn('bgcolor="#ffffff" style="width:100%;border-collapse:collapse;background:#ffffff;"', rendered["html"])
+        self.assertIn("max-width:680px", rendered["html"])
+        self.assertIn("box-shadow:0 10px 26px -18px rgba(15,23,42,0.55),0 6px 14px -10px rgba(15,23,42,0.35)", rendered["html"])
+        self.assertIn('src="cid:trufusion-logo" width="360"', rendered["html"])
+        self.assertIn("TrufusionLabs platform update", rendered["html"])
+
     def test_preview_template_rewrites_cids_to_signed_preview_assets(self) -> None:
         with patch.object(email_campaign_service.email_campaign_repository, "log_event"):
             rendered = email_campaign_service.preview_template(
